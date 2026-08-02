@@ -9,6 +9,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="apple-touch-icon" href="/favicon.ico">
 </head>
 <body>
 
@@ -23,9 +25,7 @@
         <li><a href="about.html">关于国家</a></li>
         <li><a href="server.html">服务器</a></li>
         <li><a href="maps.html">地图库</a></li>
-        <li><a href="join.html">加入我们</a></li>
       </ul>
-      <a href="join.html" class="nav-cta">加入服务器</a>
       <button class="nav-toggle" aria-label="菜单">☰</button>
     </div>
   </nav>
@@ -40,8 +40,8 @@
       <h1>NewSistar <span class="accent">国</span></h1>
       <p>一个由玩家共同打造的 Minecraft 虚拟国度。建立你的家园，书写你的传奇。</p>
       <div class="hero-actions">
-        <a href="join.html" class="btn btn-primary">🎮 开始游戏</a>
-        <a href="about.html" class="btn btn-secondary">了解更多</a>
+        <a href="about.html" class="btn btn-primary">了解更多</a>
+        <a href="server.html" class="btn btn-secondary">服务器信息</a>
       </div>
     </div>
     <div class="hero-scroll">↓ 向下滚动</div>
@@ -104,23 +104,195 @@
     </div>
   </section>
 
-  <section class="stats-section">
+  <!-- ===== 城市轮播 ===== -->
+  <section style="background: var(--bg-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 80px 0;">
     <div class="container">
-      <div class="stats-grid">
-        <div class="stat-item"><div class="stat-number">500+</div><div class="stat-label">注册玩家</div></div>
-        <div class="stat-item"><div class="stat-number">12</div><div class="stat-label">城市据点</div></div>
-        <div class="stat-item"><div class="stat-number">300+</div><div class="stat-label">玩家作品</div></div>
-        <div class="stat-item"><div class="stat-number">99.5%</div><div class="stat-label">在线率</div></div>
-      </div>
+      <span class="section-tag" style="display:block; text-align:center;">城市巡礼</span>
+      <h2 class="section-title">城市风采</h2>
+      <p class="section-subtitle">每一座城都有它的故事与城主</p>
+    </div>
+
+    <div id="cityshow">
+      <button class="city-nav city-prev" onclick="citySlide(-1)" aria-label="上一个">‹</button>
+      <div class="city-stage" id="cityStage"></div>
+      <button class="city-nav city-next" onclick="citySlide(1)" aria-label="下一个">›</button>
+      <div class="city-info-panel" id="cityInfo"></div>
+      <div class="city-dots" id="cityDots"></div>
     </div>
   </section>
+
+  <style>
+  #cityshow{position:relative;max-width:900px;margin:48px auto 0;padding:0 20px;}
+  .city-stage{position:relative;height:340px;perspective:1200px;}
+  .city-card{
+    position:absolute;top:50%;left:50%;
+    width:560px;max-width:90%;
+    transform:translate(-50%,-50%) scale(0);
+    transition:transform .6s cubic-bezier(.4,0,.2,1),opacity .6s ease;
+    border-radius:var(--radius-lg);overflow:hidden;
+    border:1px solid var(--border);background:var(--bg-3);
+    box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;
+  }
+  .city-card img{width:100%;height:300px;object-fit:cover;display:block;}
+
+  /* 当前居中卡片 */
+  .city-card.is-center{transform:translate(-50%,-50%) scale(1);opacity:1;z-index:10;pointer-events:auto;}
+  /* 左侧卡片 */
+  .city-card.is-left{transform:translate(-130%,-50%) scale(.72);opacity:.5;z-index:5;filter:blur(2px);}
+  /* 右侧卡片 */
+  .city-card.is-right{transform:translate(30%,-50%) scale(.72);opacity:.5;z-index:5;filter:blur(2px);}
+  /* 左2 */
+  .city-card.is-left2{transform:translate(-210%,-50%) scale(.5);opacity:.2;z-index:2;filter:blur(4px);}
+  /* 右2 */
+  .city-card.is-right2{transform:translate(110%,-50%) scale(.5);opacity:.2;z-index:2;filter:blur(4px);}
+
+  /* 文字信息面板 */
+  .city-info-panel{
+    text-align:left;padding:28px 0 8px;min-height:150px;
+    transition:opacity .35s ease;max-width:680px;margin:0 auto;
+  }
+  .city-info-panel.fading{opacity:0;}
+  .city-title{font-size:1.7rem;font-weight:800;color:var(--text);}
+  .city-en{font-size:1.1rem;font-weight:500;color:var(--text-muted);margin-left:8px;}
+  .city-lord{margin-top:6px;font-size:1.05rem;color:var(--accent);font-weight:600;}
+  .city-desc{margin-top:10px;color:var(--text-2);line-height:1.7;font-size:1rem;}
+
+  .city-nav{
+    position:absolute;top:30%;transform:translateY(-50%);
+    width:52px;height:52px;border-radius:50%;
+    background:var(--glass);border:1px solid var(--border);
+    color:var(--text);font-size:2rem;font-weight:700;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:all .25s;backdrop-filter:blur(8px);z-index:20;
+  }
+  .city-nav:hover{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 0 24px rgba(99,102,241,.5);}
+  .city-prev{left:-10px;}
+  .city-next{right:-10px;}
+  .city-dots{display:flex;justify-content:center;gap:8px;margin-top:20px;flex-wrap:wrap;}
+  .city-dot{width:8px;height:8px;border-radius:50%;background:var(--border);cursor:pointer;transition:all .25s;border:none;padding:0;}
+  .city-dot.active{width:24px;background:var(--primary);border-radius:4px;}
+  @media(max-width:768px){
+    #cityshow{max-width:100%;padding:0 16px;}
+    .city-stage{height:260px;}
+    .city-card{width:320px;}
+    .city-card img{height:180px;}
+    .city-nav{width:40px;height:40px;font-size:1.6rem;top:35%;}
+    .city-prev{left:0;}
+    .city-next{right:0;}
+    .city-card.is-left{transform:translate(-140%,-50%) scale(.6);}
+    .city-card.is-right{transform:translate(40%,-50%) scale(.6);}
+    .city-card.is-left2,.city-card.is-right2{opacity:0;}
+    .city-title{font-size:1.2rem;}
+    .city-en{font-size:.82rem;}
+    .city-info-panel{padding:16px 12px 4px;min-height:120px;}
+  }
+  </style>
+
+  <script>
+  const CITIES = [
+    {name:"莆阳城",en:"Puyang city",lord:"待定",img:"Minecraft%20style%20ancient%20Chinese%20riverside%20city%2C%20wooden%20pagodas%2C%20lanterns%20reflecting%20on%20water%2C%20warm%20evening%20light%2C%20cinematic",desc:"古朴的水乡之城，木楼倒映河面，灯笼长明不熄。"},
+    {name:"永宁城",en:"Yongning city",lord:"待定",img:"Minecraft%20style%20grand%20stone%20citadel%20on%20plains%2C%20tall%20watchtowers%2C%20banner%20flags%2C%20defensive%20walls%2C%20golden%20hour",desc:"平原上的永久要塞，高墙永守，安宁无虞。"},
+    {name:"蛇济大湾区",en:"Sheji Bay Area",lord:"待定",img:"Minecraft%20style%20modern%20coastal%20megacity%20skyline%2C%20skyscrapers%2C%20harbor%20cranes%2C%20neon%20lights%2C%20night%20view%2C%20futuristic",desc:"蛇济湾畔的繁华都市群，贸易与科技交汇之地。"},
+    {name:"琉球首里城",en:"Ryukyu Shuri city",lord:"待定",img:"Minecraft%20style%20Okinawan%20castle%20on%20hill%2C%20red%20roofs%2C%20tropical%20palms%2C%20ocean%20view%2C%20sunset%2C%20serene",desc:"海岛山丘上的琉球古王城，红瓦绿椰，碧海蓝天。"},
+    {name:"安西自由城",en:"Anxi Free City",lord:"待定",img:"Minecraft%20style%20desert%20oasis%20trading%20city%2C%20sandstone%20buildings%2C%20market%20stalls%2C%20camels%2C%20palm%20trees%2C%20warm%20sun",desc:"大漠绿洲中的自由商贸城，八方商旅汇聚之所。"},
+    {name:"阿穆尔生命制药公司",en:"Amur Bio-Pharma",lord:"待定",img:"Minecraft%20style%20futuristic%20pharma%20lab%20complex%2C%20glowing%20green%20tubes%2C%20glass%20domes%2C%20potion%20brewing%2C%20science%20facility",desc:"以生命科学为核心的制药巨头总部， potions 与药剂的生产中心。"},
+    {name:"断荒城",en:"Duanhuang city",lord:"待定",img:"Minecraft%20style%20frontier%20outpost%20in%20badlands%2C%20mesa%20plateau%2C%20rough%20wooden%20fort%2C%20dusty%20wasteland%2C%20harsh%20sun",desc:"荒原尽头的前哨之城，断壁残垣中铸就新生。"},
+    {name:"新北自治区",en:"Xinbei Region",lord:"待定",img:"Minecraft%20style%20snowy%20taiga%20settlement%2C%20spruce%20log%20cabins%2C%20frozen%20river%2C%20northern%20lights%2C%20cozy%20smoke",desc:"北境针叶林中的自治聚落，冰雪与炉火共存。"},
+    {name:"闽海城",en:"Minhai city",lord:"待定",img:"Minecraft%20style%20coastal%20Chinese%20fishing%20city%2C%20terraced%20houses%2C%20fishing%20boats%2C%20sea%20breeze%2C%20morning%20mist%2C%20peaceful",desc:"面朝大海的渔港之城，晨雾中千帆竞发。"},
+    {name:"潮汐城",en:"Chaoxi city",lord:"Lucas",img:"Minecraft%20style%20medieval%20coastal%20city%20at%20sunset%2C%20harbor%20with%20ships%2C%20tides%20and%20golden%20light%2C%20cinematic",desc:"临海而建，潮汐涨落间见证商贸繁华的港口之城。"},
+    {name:"晋泉",en:"Jinquan city",lord:"待定",img:"Minecraft%20style%20ancient%20spring%20city%2C%20stone%20fountains%2C%20clear%20water%20channels%2C%20old%20town%20alleys%2C%20peaceful%20courtyard",desc:"泉水潺潺的古城，石渠穿巷，清流绕户。"},
+    {name:"闽州城",en:"Minzhou city",lord:"待定",img:"Minecraft%20style%20walled%20Chinese%20provincial%20capital%2C%20grand%20gates%2C%20tile%20roofs%2C%20busy%20streets%2C%20bustling%20market",desc:"闽地州府，城墙巍峨，市井繁华。"},
+    {name:"福宁城",en:"Funing city",lord:"待定",img:"Minecraft%20style%20fortified%20hilltop%20town%2C%20stone%20walls%2C%20watch%20fires%2C%20valley%20below%2C%20defensive%20keep%2C%20dusk",desc:"山丘上的宁静堡垒，守望山谷的据点。"},
+    {name:"熊孩子大联盟",en:"Bear Kids Alliance",lord:"待定",img:"Minecraft%20style%20chaotic%20colorful%20playground%20city%2C%20rainbow%20blocks%2C%20wild%20builds%2C%20prank%20machines%2C%20fun%20and%20messy%2C%20vibrant",desc:"熊孩子们的乐园，混乱与创意并存的自由之地。"},
+    {name:"津岚城",en:"Tsuarashi city",lord:"待定",img:"Minecraft%20style%20misty%20mountain%20town%20with%20waterfalls%20and%20rivers%2C%20floating%20fog%2C%20lush%20green%20valley%2C%20serene",desc:"山岚水雾环绕的水陆枢纽，渔歌与商船在此交织。"},
+    {name:"锡安城",en:"Zion city",lord:"待定",img:"Minecraft%20style%20holy%20city%20on%20mountain%2C%20white%20stone%20temples%2C%20golden%20light%20from%20heaven%2C%20sacred%20atmosphere%2C%20divine",desc:"圣山之上的锡安圣城，白石神殿金光笼罩。"}
+  ];
+
+  const IMG = "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=";
+  let cityIdx = 0, cityTimer = null;
+
+  function buildCities(){
+    const stage = document.getElementById('cityStage');
+    const dots = document.getElementById('cityDots');
+    // 只放图片，不放文字
+    stage.innerHTML = CITIES.map((c,i) => `
+      <div class="city-card" data-idx="${i}">
+        <img src="${IMG}${c.img}&image_size=landscape_4_3" alt="${c.name}" loading="lazy">
+      </div>`).join('');
+    dots.innerHTML = CITIES.map((_,i)=>`<button class="city-dot${i===0?' active':''}" onclick="cityGo(${i})" aria-label="城市${i+1}"></button>`).join('');
+    updateCity();
+  }
+
+  function updateCity(){
+    const n = CITIES.length;
+    document.querySelectorAll('.city-card').forEach((card,i) => {
+      let off = i - cityIdx;
+      if(off > n/2) off -= n;
+      if(off < -n/2) off += n;
+      card.className = 'city-card';
+      if(off === 0) card.classList.add('is-center');
+      else if(off === -1) card.classList.add('is-left');
+      else if(off === 1) card.classList.add('is-right');
+      else if(off === -2) card.classList.add('is-left2');
+      else if(off === 2) card.classList.add('is-right2');
+    });
+    document.querySelectorAll('.city-dot').forEach((d,i)=>d.classList.toggle('active', i===cityIdx));
+
+    // 更新文字面板（淡出 -> 换内容 -> 淡入）
+    const panel = document.getElementById('cityInfo');
+    const c = CITIES[cityIdx];
+    panel.classList.add('fading');
+    setTimeout(() => {
+      panel.innerHTML = `
+        <div class="city-title">${c.name}<span class="city-en">${c.en}</span></div>
+        <div class="city-lord">城主-${c.lord}</div>
+        <div class="city-desc">${c.desc}</div>`;
+      panel.classList.remove('fading');
+    }, 180);
+  }
+
+  function citySlide(dir){
+    cityIdx = (cityIdx + dir + CITIES.length) % CITIES.length;
+    updateCity();
+    resetCityTimer();
+  }
+
+  function cityGo(i){
+    cityIdx = i;
+    updateCity();
+    resetCityTimer();
+  }
+
+  function autoCity(){
+    cityIdx = (cityIdx + 1) % CITIES.length;
+    updateCity();
+  }
+
+  function resetCityTimer(){
+    if(cityTimer) clearInterval(cityTimer);
+    cityTimer = setInterval(autoCity, 4500);
+  }
+
+  // 触摸滑动
+  let touchStartX = 0;
+  document.getElementById('cityStage').addEventListener('touchstart', e => {
+    touchStartX = e.touches[0].clientX;
+  });
+  document.getElementById('cityStage').addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if(Math.abs(dx) > 40) citySlide(dx > 0 ? -1 : 1);
+  });
+
+  buildCities();
+  resetCityTimer();
+  </script>
 
   <section>
     <div class="container">
       <div class="cta-card">
-        <h2 class="section-title" style="margin-bottom:12px;">准备好加入了吗？</h2>
-        <p class="section-subtitle" style="margin-bottom:32px;">跟随简单几步，开启你的 NewSistar 之旅</p>
-        <a href="join.html" class="btn btn-primary" style="font-size:1.1rem; padding:16px 44px;">🎮 立即加入</a>
+        <h2 class="section-title" style="margin-bottom:12px;">探索 NewSistar 国</h2>
+        <p class="section-subtitle" style="margin-bottom:32px;">了解我们的历史、文化与服务器信息</p>
+        <a href="about.html" class="btn btn-primary" style="font-size:1.1rem; padding:16px 44px;">了解更多</a>
       </div>
     </div>
   </section>
@@ -138,7 +310,6 @@
           <a href="about.html">关于国家</a>
           <a href="server.html">服务器</a>
           <a href="maps.html">地图库</a>
-          <a href="join.html">加入我们</a>
         </div>
         <div>
           <h4>联系</h4>
