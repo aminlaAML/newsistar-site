@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>地图库 - NewSistar 国</title>
+  <meta name="description" content="浏览与下载 NewSistar 国玩家上传的 Minecraft 地图作品。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-logo"><span class="logo-mark">N</span><span class="logo-text">NewSistar</span></a>
+      <ul class="nav-menu">
+        <li><a href="index.html">首页</a></li>
+        <li><a href="about.html">关于国家</a></li>
+        <li><a href="server.html">服务器</a></li>
+        <li><a href="maps.html">地图库</a></li>
+        <li><a href="join.html">加入我们</a></li>
+      </ul>
+      <a href="join.html" class="nav-cta">加入服务器</a>
+      <button class="nav-toggle" aria-label="菜单">☰</button>
+    </div>
+  </nav>
+
+  <section class="page-hero">
+    <div class="container">
+      <span class="section-tag">地图库</span>
+      <h1>探索玩家作品</h1>
+      <p>浏览精彩地图，或上传你的杰作与大家分享</p>
+    </div>
+  </section>
+
+  <section class="content-section">
+    <div class="container">
+
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 32px;">
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <select style="background: var(--glass); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px;">
+            <option>所有加载器</option><option>Fabric</option><option>Forge</option>
+          </select>
+          <select style="background: var(--glass); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px;">
+            <option>所有版本</option><option>1.21.4</option><option>1.20.1</option>
+          </select>
+          <input type="text" placeholder="搜索地图..." style="background: var(--glass); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; min-width: 200px;">
+        </div>
+        <button class="btn btn-primary" onclick="alert('上传功能建设中')">📤 上传地图</button>
+      </div>
+
+      <div class="maps-grid">
+        <div class="map-card">
+          <div class="map-thumb">🗺️</div>
+          <div class="map-info">
+            <h3>地图库开发中</h3>
+            <div class="map-meta"><span>📦 -</span><span>🎮 -</span><span>👤 官方</span></div>
+            <p class="map-desc">地图库 API 接入后，真实地图数据将在此显示。现在展示的为占位卡片。</p>
+          </div>
+        </div>
+        <div class="map-card">
+          <div class="map-thumb">🏰</div>
+          <div class="map-info">
+            <h3>新圣城 NewSistar City</h3>
+            <div class="map-meta"><span>📦 Fabric</span><span>🎮 1.21.4</span><span>👤 服主</span></div>
+            <p class="map-desc">国家首都，宏伟的中世纪城堡与现代城市的完美融合。</p>
+          </div>
+        </div>
+        <div class="map-card">
+          <div class="map-thumb">⛰️</div>
+          <div class="map-info">
+            <h3>龙脊山脉</h3>
+            <div class="map-meta"><span>📦 Fabric</span><span>🎮 1.21.4</span><span>👤 老玩家</span></div>
+            <p class="map-desc">险峻的北部山脉，丰富的矿脉与隐藏的遗迹。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cta-card" style="margin-top: 48px;">
+        <h3 style="margin-bottom: 12px;">📌 上传说明</h3>
+        <ul style="color: var(--text-2); text-align: left; margin: 16px auto; max-width: 500px; list-style: disc; padding-left: 20px;">
+          <li>地图文件需打包为 .zip 格式</li>
+          <li>单文件大小不超过 500MB</li>
+          <li>必须为原创作品或获得原作者授权</li>
+          <li>填写清晰的地图名称、版本与简介</li>
+          <li>上传后需管理员审核方可公开展示</li>
+        </ul>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 16px;">🚧 上传功能建设中，敬请期待。</p>
+      </div>
+
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <h4>NewSistar 国</h4>
+          <p>一个由玩家共同创造的 Minecraft 虚拟国度。</p>
+          <p>探索 · 建造 · 共生</p>
+        </div>
+        <div>
+          <h4>导航</h4>
+          <a href="about.html">关于国家</a>
+          <a href="server.html">服务器</a>
+          <a href="maps.html">地图库</a>
+          <a href="join.html">加入我们</a>
+        </div>
+        <div>
+          <h4>联系</h4>
+          <a href="#">QQ 群: 待填写</a>
+          <a href="#">Discord: 待填写</a>
+          <a href="#">邮箱: 待填写</a>
+        </div>
+      </div>
+      <div class="footer-bottom">© 2026 NewSistar 国 · 本站托管于 Cloudflare</div>
+    </div>
+  </footer>
+
+  <script src="assets/js/main.js"></script>
+</body>
+</html>
