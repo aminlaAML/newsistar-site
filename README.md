@@ -2,5 +2,5 @@
 此分支用于测试前沿界面UI。main分支由assaulterKrypton进行管理。<br/>
 <img
   class="fit-picture"
-  src="/FuckingREADMEPicture/README1.jpg"
+  src="README1.jpg"
   alt="神鹰哥敬礼" />
