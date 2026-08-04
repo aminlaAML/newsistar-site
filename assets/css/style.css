@@ -155,7 +155,7 @@ body::before {
   position: absolute; inset: 0;
   background:
     linear-gradient(180deg, rgba(10, 10, 15, 0.3) 0%, rgba(10, 10, 15, 0.85) 100%),
-    url("https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=epic%20Minecraft%20fantasy%20medieval%20city%20panorama%2C%20cinematic%20sunset%2C%20golden%20hour%2C%20volumetric%20lighting%2C%20vibrant%20colors%2C%20ultra%20detailed%2C%20wide%20angle&image_size=landscape_16_9") center/cover no-repeat;
+    url("../2026-08-03_15.04.33.png") center/cover no-repeat;
   filter: saturate(1.1);
 }
 .hero-content {
