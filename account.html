@@ -146,6 +146,7 @@
               <div class="admin-tabs">
                 <button class="admin-tab active" id="tabAdd">添加用户</button>
                 <button class="admin-tab" id="tabList">用户列表</button>
+                <button class="admin-tab" id="tabNews">发布新闻</button>
               </div>
 
               <div class="alert-box" id="adminAlert"></div>
@@ -163,6 +164,27 @@
                 </div>
                 <p class="form-hint">* 为必填。密码只保存哈希，忘记需删除重建。</p>
                 <button class="btn-add" id="btnAddUser">创建账号</button>
+              </div>
+
+              <!-- 发布新闻 -->
+              <div id="paneNews" style="display:none;">
+                <div class="add-form">
+                  <input type="text" id="newsTitle" placeholder="新闻标题 *" maxlength="120" class="full">
+                  <textarea id="newsContent" placeholder="新闻正文 *（最多5000字符）" maxlength="5000" rows="6" class="full" style="padding:10px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:0.9rem;font-family:inherit;resize:vertical;"></textarea>
+                </div>
+                <p class="form-hint">发布后立即显示在首页"国家公告板"，按日期倒序排列。</p>
+                <button class="btn-add" id="btnPublishNews">发布公告</button>
+
+                <div style="margin-top: 28px;">
+                  <h2 style="margin-bottom: 12px;">已发布新闻</h2>
+                  <div class="loading" id="newsListLoading">加载中…</div>
+                  <table class="user-table" id="newsTable" style="display:none;">
+                    <thead>
+                      <tr><th>标题</th><th>发布者</th><th>日期</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="newsTbody"></tbody>
+                  </table>
+                </div>
               </div>
 
               <!-- 用户列表 -->
@@ -231,14 +253,16 @@
     }
 
     // Tab 切换
-    $('tabAdd').addEventListener('click', () => {
-      $('tabAdd').classList.add('active'); $('tabList').classList.remove('active');
-      $('paneAdd').style.display = 'block'; $('paneList').style.display = 'none';
-    });
-    $('tabList').addEventListener('click', () => {
-      $('tabList').classList.add('active'); $('tabAdd').classList.remove('active');
-      $('paneList').style.display = 'block'; $('paneAdd').style.display = 'none';
-      loadUsers();
+    const tabs = { tabAdd: 'paneAdd', tabList: 'paneList', tabNews: 'paneNews' };
+    Object.keys(tabs).forEach(t => {
+      $(t).addEventListener('click', () => {
+        Object.keys(tabs).forEach(x => {
+          $(x).classList.toggle('active', x === t);
+          $(tabs[x]).style.display = x === t ? 'block' : 'none';
+        });
+        if (t === 'tabList') loadUsers();
+        if (t === 'tabNews') loadNewsAdmin();
+      });
     });
 
     // 创建用户
@@ -294,6 +318,75 @@
           </tr>`).join('');
       } catch (e) {
         $('listLoading').textContent = '网络错误';
+      }
+    }
+
+    // ===== 新闻发布 =====
+    $('btnPublishNews').addEventListener('click', async () => {
+      const title = $('newsTitle').value.trim();
+      const content = $('newsContent').value.trim();
+      if (!title) return alertBox('标题不能为空', false);
+      if (!content) return alertBox('内容不能为空', false);
+
+      const btn = $('btnPublishNews');
+      btn.disabled = true; btn.textContent = '发布中…';
+      try {
+        const res = await fetch(`${API_BASE}/api/news`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ title, content })
+        });
+        const r = await res.json();
+        if (res.ok) {
+          alertBox('公告已发布，首页即时可见', true);
+          $('newsTitle').value = ''; $('newsContent').value = '';
+          loadNewsAdmin();
+        } else {
+          alertBox(r.error || '发布失败', false);
+        }
+      } catch (e) {
+        alertBox('网络错误，无法连接服务', false);
+      } finally {
+        btn.disabled = false; btn.textContent = '发布公告';
+      }
+    });
+
+    // 管理端新闻列表（含删除）
+    async function loadNewsAdmin() {
+      $('newsListLoading').style.display = 'block';
+      $('newsTable').style.display = 'none';
+      try {
+        const res = await fetch(`${API_BASE}/api/news?limit=50`, { credentials: 'include' });
+        const r = await res.json();
+        if (!res.ok) { $('newsListLoading').textContent = r.error || '加载失败'; return; }
+        if (!r.data.length) { $('newsListLoading').textContent = '还没有发布过新闻'; return; }
+        $('newsListLoading').style.display = 'none';
+        $('newsTable').style.display = 'table';
+        $('newsTbody').innerHTML = r.data.map(n => `
+          <tr>
+            <td></td>
+            <td>${n.author}</td>
+            <td>${new Date(n.created_at * 1000).toLocaleDateString('zh-CN')}</td>
+            <td><button class="btn-del-news" data-id="${n.id}" style="color:var(--danger);background:none;border:1px solid rgba(220,38,38,.3);border-radius:6px;padding:4px 10px;font-size:.78rem;cursor:pointer;">删除</button></td>
+          </tr>`).join('');
+        // 安全填充标题
+        document.querySelectorAll('#newsTbody tr').forEach((tr, i) => {
+          tr.querySelector('td').textContent = r.data[i].title;
+        });
+        // 删除按钮
+        document.querySelectorAll('.btn-del-news').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm('确定删除这条新闻吗？')) return;
+            try {
+              const dres = await fetch(`${API_BASE}/api/news/${btn.dataset.id}`, { method: 'DELETE', credentials: 'include' });
+              if (dres.ok) { alertBox('已删除', true); loadNewsAdmin(); }
+              else alertBox('删除失败', false);
+            } catch (e) { alertBox('网络错误', false); }
+          });
+        });
+      } catch (e) {
+        $('newsListLoading').textContent = '网络错误';
       }
     }
   </script>
