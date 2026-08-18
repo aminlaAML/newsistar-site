@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用户中心 - 新汐斯塔共和国</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="apple-touch-icon" href="/favicon.ico">
+  <style>
+    .account-hero { padding: 140px 0 40px; }
+    .account-card {
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      padding: 36px;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    .profile-row {
+      display: flex; align-items: center; gap: 16px;
+      padding-bottom: 22px; margin-bottom: 22px;
+      border-bottom: 1px solid var(--border);
+    }
+    .avatar {
+      width: 56px; height: 56px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; font-weight: 800; color: #fff;
+      flex-shrink: 0;
+    }
+    .profile-info h1 { font-size: 1.4rem; font-weight: 800; color: var(--text); }
+    .profile-info p { font-size: 0.85rem; color: var(--text-2); margin-top: 2px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border-radius: 100px;
+      font-size: 0.75rem; font-weight: 700; margin-top: 6px;
+    }
+    .badge.admin { color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); }
+    .badge.user { color: var(--text-2); background: var(--surface); border: 1px solid var(--border); }
+    .btn-logout {
+      background: rgba(220, 38, 38, 0.08);
+      color: var(--danger);
+      border: 1px solid rgba(220, 38, 38, 0.3);
+      padding: 10px 24px;
+      border-radius: var(--radius-sm);
+      font-weight: 700; font-size: 0.9rem;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .btn-logout:hover { background: var(--danger); color: #fff; }
+
+    /* ===== 管理员面板 ===== */
+    .admin-section { margin-top: 8px; }
+    .admin-section h2 { font-size: 1.05rem; font-weight: 700; color: var(--text); margin-bottom: 14px; }
+    .admin-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+    .admin-tab {
+      padding: 7px 16px; border-radius: 100px; font-size: 0.85rem; font-weight: 600;
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text-2); cursor: pointer; transition: all 0.2s;
+    }
+    .admin-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .add-form {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px;
+    }
+    .add-form .full { grid-column: 1 / -1; }
+    .add-form input, .add-form select {
+      padding: 10px 12px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--text); font-size: 0.9rem; font-family: inherit;
+    }
+    .add-form input:focus, .add-form select:focus { outline: none; border-color: var(--primary); }
+    .form-hint { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 14px; }
+    .btn-add {
+      padding: 10px 22px; border-radius: var(--radius-sm); font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), #f97316); color: #fff;
+      border: none; cursor: pointer; font-size: 0.9rem;
+    }
+    .user-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .user-table th {
+      text-align: left; padding: 10px 12px; color: var(--text-2);
+      font-size: 0.78rem; border-bottom: 1px solid var(--border);
+    }
+    .user-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+    .user-table tr:last-child td { border-bottom: none; }
+    .role-cell-admin { color: var(--primary); font-weight: 700; }
+    .alert-box {
+      display: none; padding: 10px 14px; border-radius: var(--radius-sm);
+      font-size: 0.85rem; margin-bottom: 14px; border: 1px solid;
+    }
+    .alert-box.show { display: block; }
+    .alert-box.err { color: var(--danger); background: rgba(220,38,38,.08); border-color: rgba(220,38,38,.3); }
+    .alert-box.ok { color: var(--success); background: rgba(5,150,105,.08); border-color: rgba(5,150,105,.3); }
+    .loading { text-align: center; color: var(--text-muted); padding: 20px; font-size: 0.9rem; }
+    @media(max-width:640px){ .add-form { grid-template-columns: 1fr; } .profile-row { flex-wrap: wrap; } }
+  </style>
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-logo">
+        <img src="favicon.ico" class="logo-mark" alt="logo" style="width:28px;height:28px;object-fit:contain;background:transparent;border:none;box-shadow:none;border-radius:0;filter:none;display:block;">
+        <span class="logo-text">新汐斯塔</span>
+      </a>
+      <ul class="nav-menu">
+        <li><a href="index.html">首页</a></li>
+        <li><a href="about.html">关于国家</a></li>
+        <li><a href="account.html" id="navAuth" class="nav-cta">用户中心</a></li>
+      </ul>
+      <button class="nav-toggle" aria-label="菜单">☰</button>
+    </div>
+  </nav>
+
+  <section class="account-hero">
+    <div class="container">
+      <div class="account-card">
+
+        <!-- 未登录 -->
+        <div id="notLoggedIn" style="display:none; text-align:center; padding: 20px 0;">
+          <p style="color: var(--text-2); margin-bottom: 18px;">你还未登录</p>
+          <a href="login.html" class="btn btn-primary" style="padding:11px 28px;">前往登录</a>
+        </div>
+
+        <!-- 个人信息 + 退出 -->
+        <div id="profileArea" style="display:none;">
+          <div class="profile-row">
+            <div class="avatar" id="avatarChar">?</div>
+            <div class="profile-info">
+              <h1 id="profileName">加载中…</h1>
+              <p id="profileRole"></p>
+              <span class="badge" id="profileBadge"></span>
+            </div>
+          </div>
+          <button class="btn-logout" id="logoutBtn">退出登录</button>
+
+          <!-- ===== 管理员面板 ===== -->
+          <div id="adminPanel" style="display:none; margin-top: 30px;">
+            <div style="border-top: 1px solid var(--border); padding-top: 26px;" class="admin-section">
+              <h2>👑 用户管理（仅管理员可见）</h2>
+
+              <div class="admin-tabs">
+                <button class="admin-tab active" id="tabAdd">添加用户</button>
+                <button class="admin-tab" id="tabList">用户列表</button>
+              </div>
+
+              <div class="alert-box" id="adminAlert"></div>
+
+              <!-- 添加用户 -->
+              <div id="paneAdd">
+                <div class="add-form">
+                  <input type="text" id="addUsername" placeholder="服务器用户名 *" maxlength="32">
+                  <input type="text" id="addDisplay" placeholder="显示昵称（可选）" maxlength="32">
+                  <input type="password" id="addIdcard" placeholder="身份证号码 *（将作为登录密码）" maxlength="18" class="full">
+                  <select id="addRole" class="full">
+                    <option value="user">普通用户</option>
+                    <option value="admin">管理员</option>
+                  </select>
+                </div>
+                <p class="form-hint">* 为必填。密码只保存哈希，忘记需删除重建。</p>
+                <button class="btn-add" id="btnAddUser">创建账号</button>
+              </div>
+
+              <!-- 用户列表 -->
+              <div id="paneList" style="display:none;">
+                <div class="loading" id="listLoading">加载中…</div>
+                <table class="user-table" id="userTable" style="display:none;">
+                  <thead>
+                    <tr><th>用户名</th><th>昵称</th><th>角色</th><th>状态</th><th>最后登录</th></tr>
+                  </thead>
+                  <tbody id="userTbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const API_BASE = 'https://api.newsistar.com';
+    const $ = id => document.getElementById(id);
+
+    // ===== 会话检查 =====
+    (async function () {
+      let me = null;
+      try {
+        const r = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' });
+        if (r.ok) me = (await r.json()).data;
+      } catch (e) {}
+      if (!me) { $('notLoggedIn').style.display = 'block'; return; }
+
+      $('profileArea').style.display = 'block';
+      const name = me.display_name || me.username;
+      $('profileName').textContent = name;
+      $('avatarChar').textContent = name.charAt(0).toUpperCase();
+      if (me.is_admin) {
+        $('profileRole').textContent = '管理员';
+        const b = $('profileBadge');
+        b.textContent = '👑 管理员';
+        b.className = 'badge admin';
+        $('adminPanel').style.display = 'block';
+      } else {
+        $('profileRole').textContent = '注册公民';
+        const b = $('profileBadge');
+        b.textContent = '🛡 公民';
+        b.className = 'badge user';
+      }
+    })();
+
+    // ===== 退出登录 =====
+    $('logoutBtn').addEventListener('click', async () => {
+      $('logoutBtn').textContent = '退出中…';
+      $('logoutBtn').disabled = true;
+      try { await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' }); } catch (e) {}
+      location.href = 'login.html';
+    });
+
+    // ===== 管理员面板 =====
+    function alertBox(msg, ok) {
+      const el = $('adminAlert');
+      el.textContent = msg;
+      el.className = 'alert-box show ' + (ok ? 'ok' : 'err');
+      setTimeout(() => el.classList.remove('show'), 3500);
+    }
+
+    // Tab 切换
+    $('tabAdd').addEventListener('click', () => {
+      $('tabAdd').classList.add('active'); $('tabList').classList.remove('active');
+      $('paneAdd').style.display = 'block'; $('paneList').style.display = 'none';
+    });
+    $('tabList').addEventListener('click', () => {
+      $('tabList').classList.add('active'); $('tabAdd').classList.remove('active');
+      $('paneList').style.display = 'block'; $('paneAdd').style.display = 'none';
+      loadUsers();
+    });
+
+    // 创建用户
+    $('btnAddUser').addEventListener('click', async () => {
+      const username = $('addUsername').value.trim();
+      const idcard = $('addIdcard').value.trim();
+      const display_name = $('addDisplay').value.trim();
+      const role = $('addRole').value;
+
+      if (!username) return alertBox('服务器用户名不能为空', false);
+      if (!idcard) return alertBox('身份证号码不能为空', false);
+
+      const btn = $('btnAddUser');
+      btn.disabled = true; btn.textContent = '创建中…';
+      try {
+        const res = await fetch(`${API_BASE}/api/admin/users`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ username, password: idcard, display_name: display_name || undefined, role })
+        });
+        const r = await res.json();
+        if (res.ok) {
+          alertBox(`已创建 ${username}（${role === 'admin' ? '管理员' : '普通用户'}）`, true);
+          $('addUsername').value = ''; $('addIdcard').value = ''; $('addDisplay').value = '';
+        } else {
+          alertBox(r.error || '创建失败', false);
+        }
+      } catch (e) {
+        alertBox('网络错误，无法连接服务', false);
+      } finally {
+        btn.disabled = false; btn.textContent = '创建账号';
+      }
+    });
+
+    // 用户列表
+    async function loadUsers() {
+      $('listLoading').style.display = 'block';
+      $('userTable').style.display = 'none';
+      try {
+        const res = await fetch(`${API_BASE}/api/admin/users`, { credentials: 'include' });
+        const r = await res.json();
+        if (!res.ok) { $('listLoading').textContent = r.error || '加载失败'; return; }
+        $('listLoading').style.display = 'none';
+        $('userTable').style.display = 'table';
+        $('userTbody').innerHTML = r.data.map(u => `
+          <tr>
+            <td>${u.username}</td>
+            <td>${u.display_name || '-'}</td>
+            <td class="${u.role === 'admin' ? 'role-cell-admin' : ''}">${u.role === 'admin' ? '👑 管理员' : '公民'}</td>
+            <td>${u.status === 'active' ? '正常' : '禁用'}</td>
+            <td>${u.last_login_at ? new Date(u.last_login_at * 1000).toLocaleString('zh-CN') : '从未'}</td>
+          </tr>`).join('');
+      } catch (e) {
+        $('listLoading').textContent = '网络错误';
+      }
+    }
+  </script>
+
+  <script src="assets/js/main.js"></script>
+</body>
+</html>

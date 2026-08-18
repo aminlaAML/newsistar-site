@@ -3,6 +3,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const $ = (s, c = document) => c.querySelector(s);
   const $$ = (s, c = document) => [...c.querySelectorAll(s)];
 
+  // ===== 全站登录状态检测 =====
+  // 约定：导航栏中 <a id="navAuth" href="login.html">登录</a> 会被自动替换
+  const API_BASE = 'https://api.newsistar.com';
+  const navAuth = $('#navAuth');
+  if (navAuth) {
+    fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(r => {
+        if (!r || !r.data) return; // 未登录，保持"登录"按钮
+        const u = r.data;
+        navAuth.href = 'account.html';
+        navAuth.innerHTML = u.is_admin
+          ? '👑 ' + (u.display_name || u.username)
+          : '🛡 ' + (u.display_name || u.username);
+        navAuth.classList.add('nav-cta');
+      })
+      .catch(() => {}); // 网络失败静默处理
+  }
+
   // 导航栏滚动效果
   const navbar = $('.navbar');
   if (navbar) {
