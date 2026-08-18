@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登录 - 新汐斯塔共和国</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="apple-touch-icon" href="/favicon.ico">
+  <style>
+    .login-hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 120px 20px 60px;
+      position: relative;
+    }
+    .login-card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--glass);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      padding: 40px 36px;
+      position: relative;
+      z-index: 1;
+    }
+    .login-card .logo-mark-img {
+      width: 48px; height: 48px;
+      object-fit: contain;
+      background: transparent; border: none; border-radius: 0;
+      box-shadow: none; filter: none; display: block;
+      margin: 0 auto 14px;
+    }
+    .login-title {
+      text-align: center;
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin-bottom: 6px;
+      background: linear-gradient(180deg, var(--text), var(--primary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .login-sub {
+      text-align: center;
+      color: var(--text-2);
+      font-size: 0.88rem;
+      margin-bottom: 28px;
+    }
+    .form-group { margin-bottom: 18px; }
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .form-group label .required { color: var(--danger); margin-left: 2px; }
+    .form-group input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.95rem;
+      font-family: inherit;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      box-sizing: border-box;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+    .form-group input.input-error { border-color: var(--danger); }
+    .field-error {
+      display: none;
+      color: var(--danger);
+      font-size: 0.78rem;
+      margin-top: 4px;
+    }
+    .field-error.show { display: block; }
+    .login-alert {
+      display: none;
+      padding: 11px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      margin-bottom: 18px;
+      border: 1px solid;
+    }
+    .login-alert.show { display: block; }
+    .login-alert.alert-error {
+      color: var(--danger);
+      background: rgba(220, 38, 38, 0.08);
+      border-color: rgba(220, 38, 38, 0.3);
+    }
+    .login-alert.alert-success {
+      color: var(--success);
+      background: rgba(5, 150, 105, 0.08);
+      border-color: rgba(5, 150, 105, 0.3);
+    }
+    .btn-login {
+      width: 100%;
+      padding: 13px;
+      margin-top: 6px;
+      font-size: 1rem;
+    }
+    .btn-login:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+    .turnstile-wrap {
+      margin: 4px 0 18px;
+      min-height: 65px;
+      display: flex;
+      justify-content: center;
+    }
+    /* 已登录状态卡片 */
+    .user-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 100px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin: 10px auto 4px;
+    }
+    .user-badge.admin {
+      color: #fff;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+    }
+    .user-badge.user {
+      color: var(--text-2);
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .welcome-name {
+      text-align: center;
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: var(--text);
+      margin: 8px 0 20px;
+    }
+    .btn-logout {
+      width: 100%;
+      justify-content: center;
+    }
+    .login-footer {
+      text-align: center;
+      margin-top: 18px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .login-footer a { color: var(--primary); }
+  </style>
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-logo">
+        <img src="favicon.ico" class="logo-mark" alt="logo" style="width:28px;height:28px;object-fit:contain;background:transparent;border:none;box-shadow:none;border-radius:0;filter:none;display:block;">
+        <span class="logo-text">新汐斯塔</span>
+      </a>
+      <ul class="nav-menu">
+        <li><a href="index.html">首页</a></li>
+        <li><a href="about.html">关于国家</a></li>
+      </ul>
+      <button class="nav-toggle" aria-label="菜单">☰</button>
+    </div>
+  </nav>
+
+  <section class="login-hero">
+    <div class="login-card">
+
+      <!-- ===== 登录表单 ===== -->
+      <div id="loginView">
+        <img src="favicon.ico" class="logo-mark-img" alt="logo">
+        <h1 class="login-title">公民登录</h1>
+        <p class="login-sub">使用服务器用户名与身份证号码登录</p>
+
+        <div class="login-alert alert-error" id="loginError"></div>
+
+        <form id="loginForm" novalidate>
+          <div class="form-group">
+            <label for="username">服务器用户名<span class="required">*</span></label>
+            <input type="text" id="username" name="username" placeholder="请输入 Minecraft 服务器用户名" autocomplete="username" maxlength="32">
+            <div class="field-error" id="errUsername">用户名不能为空</div>
+          </div>
+
+          <div class="form-group">
+            <label for="idcard">身份证号码<span class="required">*</span></label>
+            <input type="password" id="idcard" name="idcard" placeholder="身份证号码将作为密码使用" autocomplete="current-password" maxlength="18">
+            <div class="field-error" id="errIdcard">身份证号码不能为空</div>
+          </div>
+
+          <!-- Cloudflare Turnstile 人机验证 -->
+          <div class="turnstile-wrap">
+            <div id="turnstileContainer"></div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-login" id="loginBtn">登 录</button>
+        </form>
+
+        <div class="login-footer">忘记密码或申请账号？请联系管理员</div>
+      </div>
+
+      <!-- ===== 已登录视图 ===== -->
+      <div id="userView" style="display:none;">
+        <img src="favicon.ico" class="logo-mark-img" alt="logo">
+        <div style="text-align:center;"><span class="user-badge" id="roleBadge"></span></div>
+        <div class="welcome-name" id="welcomeName"></div>
+        <div class="login-alert alert-success" id="loginSuccess" style="text-align:center;">登录成功，欢迎回来！</div>
+        <a href="index.html" class="btn btn-secondary btn-login" style="margin-bottom:12px;">返回首页</a>
+        <button class="btn btn-secondary btn-logout" id="logoutBtn">退出登录</button>
+      </div>
+
+    </div>
+  </section>
+
+  <script>
+    // ===== 配置区（部署时按需修改）=====
+    // API 地址：若 Worker 已绑定到同域名（如通过 Pages Functions / 同域路由），保持 '' 即可；
+    // 若 API 独立部署在 api.newsistar.com，请改为 'https://api.newsistar.com'
+    const API_BASE = 'https://api.newsistar.com';
+    // Cloudflare Turnstile 站点密钥（Site Key，前端可见，公开信息）
+    // 申请入口: Cloudflare Dashboard → Turnstile → Add site
+    const TURNSTILE_SITEKEY = '0x4AAAAAAEUJX2muM2ApyJGx';
+
+    const $ = id => document.getElementById(id);
+    let turnstileWidgetId = null;
+
+    // ===== Turnstile 显式渲染 =====
+    window.onloadTurnstileCallback = function () {
+      if (TURNSTILE_SITEKEY.startsWith('REPLACE_WITH')) return; // 未配置则跳过
+      turnstileWidgetId = turnstile.render('#turnstileContainer', {
+        sitekey: TURNSTILE_SITEKEY,
+        theme: 'auto',
+        language: 'zh-cn',
+        callback: () => clearError(),
+        'expired-callback': () => {},
+      });
+    };
+
+    (function loadTurnstile() {
+      if (TURNSTILE_SITEKEY.startsWith('REPLACE_WITH')) return;
+      const s = document.createElement('script');
+      s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit';
+      s.async = true;
+      s.defer = true;
+      document.head.appendChild(s);
+    })();
+
+    // ===== 错误提示 =====
+    function showError(msg) {
+      const el = $('loginError');
+      el.textContent = msg;
+      el.classList.add('show');
+    }
+    function clearError() {
+      $('loginError').classList.remove('show');
+    }
+    function fieldError(inputId, errId, show) {
+      $(inputId).classList.toggle('input-error', show);
+      $(errId).classList.toggle('show', show);
+    }
+
+    // ===== 页面加载时检查已有会话 =====
+    (async function checkSession() {
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' });
+        if (res.ok) {
+          const r = await res.json();
+          if (r.data) showUserView(r.data);
+        }
+      } catch (e) { /* 忽略，保持登录视图 */ }
+    })();
+
+    // ===== 登录表单提交 =====
+    $('loginForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      clearError();
+
+      const username = $('username').value.trim();
+      const idcard = $('idcard').value.trim();
+
+      // 非空校验（全部必填）
+      let valid = true;
+      if (!username) { fieldError('username', 'errUsername', true); valid = false; }
+      else fieldError('username', 'errUsername', false);
+      if (!idcard) { fieldError('idcard', 'errIdcard', true); valid = false; }
+      else fieldError('idcard', 'errIdcard', false);
+      if (!valid) { showError('请填写所有必填项'); return; }
+
+      // Turnstile token（若已配置）
+      let tsToken = null;
+      if (typeof turnstile !== 'undefined' && turnstileWidgetId !== null) {
+        tsToken = turnstile.getResponse(turnstileWidgetId);
+        if (!tsToken) { showError('请先完成人机验证'); return; }
+      }
+
+      const btn = $('loginBtn');
+      btn.disabled = true;
+      btn.textContent = '登录中…';
+
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            username: username,
+            password: idcard,
+            'cf-turnstile-response': tsToken,
+          }),
+        });
+        const r = await res.json();
+
+        if (res.ok && r.data) {
+          showUserView(r.data);
+        } else {
+          showError(r.error || '登录失败，请稍后重试');
+          if (turnstileWidgetId !== null) turnstile.reset(turnstileWidgetId);
+        }
+      } catch (err) {
+        showError('网络错误，无法连接登录服务');
+        if (turnstileWidgetId !== null) turnstile.reset(turnstileWidgetId);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '登 录';
+      }
+    });
+
+    // ===== 显示已登录视图（含管理员身份） =====
+    function showUserView(user) {
+      $('loginView').style.display = 'none';
+      $('userView').style.display = 'block';
+      $('welcomeName').textContent = user.display_name || user.username;
+
+      const badge = $('roleBadge');
+      if (user.is_admin) {
+        badge.textContent = '👑 管理员';
+        badge.className = 'user-badge admin';
+      } else {
+        badge.textContent = '🛡 公民';
+        badge.className = 'user-badge user';
+      }
+    }
+
+    // ===== 退出登录 =====
+    $('logoutBtn').addEventListener('click', async function () {
+      try {
+        await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+      } catch (e) { /* 忽略 */ }
+      location.reload();
+    });
+  </script>
+
+  <script src="assets/js/main.js"></script>
+</body>
+</html>
