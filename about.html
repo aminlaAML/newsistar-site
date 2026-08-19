@@ -69,9 +69,413 @@
   <div class="container">
     <div id="people">
       <h2><span class="icon">👥</span> 人物介绍</h2>
+
+      <!-- ===== 玩家资料展示（书页式侧边栏） ===== -->
+      <div class="people-wrap">
+
+        <!-- 左侧：书脊侧边栏（透明，弧形装饰线在左缘贯穿） -->
+        <aside class="people-nav">
+          <svg class="people-arc" viewBox="-14 0 62 640" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="arcGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#6366f1" stop-opacity="0"/>
+                <stop offset="0.18" stop-color="#6366f1" stop-opacity="0.9"/>
+                <stop offset="0.82" stop-color="#f59e0b" stop-opacity="0.9"/>
+                <stop offset="1" stop-color="#f59e0b" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <!-- 竖向贯穿的弧线：左缘从顶部淡入，向左弯出更明显的弧度，再回到右淡出 -->
+            <path d="M 18 0 C -8 160, -8 480, 18 640" fill="none" stroke="url(#arcGrad)" stroke-width="2.5"/>
+          </svg>
+          <div class="people-stage" id="peopleStage"></div>
+        </aside>
+
+        <!-- 右侧：翻开的书页（两张独立卡片） -->
+        <div class="people-panel">
+          <!-- 卡片一：头像 + 昵称 + 称号 -->
+          <div class="pp-card pp-head-card">
+            <div class="pp-head">
+              <div class="pp-avatar-box" id="ppAvatarBox"><img class="pp-avatar" id="ppAvatar" alt="头像"></div>
+              <div class="pp-id">
+                <div class="pp-nickname" id="ppNickname">—</div>
+                <div class="pp-name" id="ppName">—</div>
+                <div class="pp-tags" id="ppTags"></div>
+                <div class="pp-meta" id="ppMeta"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 卡片二：皮肤 + 荣誉事迹（并排） -->
+          <div class="pp-card pp-body-card">
+            <div class="pp-skin">
+              <canvas id="ppSkinCanvas"></canvas>
+              <div class="pp-skin-tip">拖拽旋转 · 滚轮缩放</div>
+            </div>
+            <div class="pp-honors">
+              <h3>🏅 荣誉事迹</h3>
+              <ul id="ppHonorList"></ul>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
   </div>
 </section>
+
+<style>
+  /* ===== 人物介绍：书页式布局 ===== */
+  .people-wrap {
+    display: grid;
+    grid-template-columns: 210px 1fr;
+    gap: 30px;              /* 左右两栏独立，互不衔接 */
+    align-items: stretch;
+  }
+
+  /* 左侧书脊：透明，仅弧线装饰 */
+  .people-nav {
+    position: relative;
+    background: transparent;
+    padding: 100px 0 30px 44px;  /* 顶部下移：名称整体往下 */
+  }
+  .people-arc {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 48px; height: 100%;
+    pointer-events: none;
+  }
+  /* 名字轮播舞台（index 城市轮播同款景深效果，纵向） */
+  .people-stage {
+    position: relative;
+    height: 300px;
+    perspective: 900px;
+  }
+  .people-item {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.95rem; font-weight: 700; color: var(--text-2);
+    white-space: nowrap; cursor: pointer;
+    opacity: 0; pointer-events: none;
+    transition: transform .55s cubic-bezier(.4,0,.2,1), opacity .55s ease, filter .55s ease;
+  }
+  .people-item:hover { color: var(--text); }
+  .people-item.is-center {
+    opacity: 1; z-index: 10; pointer-events: auto;
+    font-size: 1.41rem; font-weight: 900; color: var(--text);
+    text-shadow: 0 0 18px rgba(99,102,241,.45);
+    transform: translate(calc(-50% - 14px), -50%);  /* 居中并整体左移 */
+  }
+  /* 选中项的 ◀ 箭头：绝对定位在名字右侧偏下，不挤动居中的文字 */
+  .people-item.is-center::after {
+    content: '◀';
+    position: absolute;
+    left: calc(100% + 10px); top: calc(64% - 2px);
+    transform: translateY(-50%);
+    font-size: 0.66rem; color: var(--primary);
+    text-shadow: 0 0 12px rgba(99,102,241,.8);
+    animation: ppArrow 1.6s ease-in-out infinite;
+  }
+  @keyframes ppArrow {
+    0%, 100% { transform: translateY(-50%) translateX(0); }
+    50%      { transform: translateY(-50%) translateX(-4px); }
+  }
+  .people-item.is-up1   { transform: translate(-50%, calc(-50% - 58px)) scale(.8);  opacity: .85; z-index: 4; pointer-events: auto; }
+  .people-item.is-down1 { transform: translate(-50%, calc(-50% + 58px)) scale(.8);  opacity: .85; z-index: 4; pointer-events: auto; }
+  .people-item.is-up2   { transform: translate(-50%, calc(-50% - 106px)) scale(.6); opacity: .45; z-index: 2; pointer-events: auto; }
+  .people-item.is-down2 { transform: translate(-50%, calc(-50% + 106px)) scale(.6); opacity: .45; z-index: 2; pointer-events: auto; }
+  /* 出界：从边缘平滑滑出并隐藏（保留过渡）；跨界瞬移用 no-anim */
+  .people-item.is-far-up   { transform: translate(-50%, calc(-50% - 150px)) scale(.5); opacity: 0; }
+  .people-item.is-far-down { transform: translate(-50%, calc(-50% + 150px)) scale(.5); opacity: 0; }
+  .people-item.no-anim { transition: none !important; }
+  /* 跨界名字：滑出+滑入各占一半时间，总时长与其他名字的 .55s 完全一致 */
+  .people-item.crossing { transition-duration: .275s !important; }
+
+  /* 右侧书页：上下两张独立卡片 */
+  .people-panel { display: flex; flex-direction: column; gap: 22px; }
+  .pp-card {
+    background: var(--glass);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+  }
+  .pp-head-card { padding: 26px 28px; }
+  .pp-body-card { padding: 24px 28px; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; align-items: start; }
+
+  .pp-head {
+    display: flex; gap: 18px; align-items: center; flex-wrap: wrap;  /* 空间不足时头像与信息换行，不重叠 */
+  }
+  .pp-id { flex: 1; min-width: 0; }  /* 允许收缩，长昵称换行而非溢出 */
+  .pp-avatar-box {
+    width: 76px; height: 76px; border-radius: 16px;
+    border: 1px solid var(--border); background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; flex-shrink: 0;
+    font-size: 1.6rem; font-weight: 900; color: var(--primary);
+  }
+  .pp-avatar { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; display: none; }
+  .pp-nickname { font-size: 1.35rem; font-weight: 900; color: var(--text); letter-spacing: -0.01em; overflow-wrap: anywhere; }
+  .pp-name { font-size: 0.82rem; color: var(--text-muted); font-family: monospace; margin-top: 2px; min-height: 0.82rem; overflow-wrap: anywhere; }
+  .pp-tags:empty, .pp-meta:empty { display: none; }  /* 空标签行不占位 */
+  .pp-tags { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .pp-tag {
+    padding: 3px 12px; border-radius: 100px;
+    font-size: 0.74rem; font-weight: 700; max-width: 100%;
+    color: var(--text-2); background: var(--surface); border: 1px solid var(--border);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pp-tag.hot { color: #fff; background: linear-gradient(135deg, #6366f1, #4f46e5); border: none; }
+  .pp-meta { margin-top: 10px; font-size: 0.8rem; color: var(--text-muted); display: flex; gap: 6px 14px; flex-wrap: wrap; }
+  .pp-meta span { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; overflow-wrap: anywhere; }
+
+  .pp-skin { text-align: center; min-width: 0; }
+  #ppSkinCanvas {
+    width: 220px; height: 300px; border-radius: 14px;
+    background: radial-gradient(ellipse 70% 50% at 50% 32%, var(--surface) 0%, transparent 70%), var(--bg-2, rgba(255,255,255,0.02));
+    border: 1px solid var(--border); cursor: grab;
+  }
+  #ppSkinCanvas:active { cursor: grabbing; }
+  .pp-skin-tip { font-size: 0.74rem; color: var(--text-muted); margin-top: 10px; }
+  .pp-honors h3 {
+    font-size: 0.95rem; font-weight: 800; color: var(--text);
+    margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+  }
+  .pp-honors { min-width: 0; }  /* 防止 grid 列内容过宽挤压重叠 */
+  .pp-honors ul { list-style: none; margin: 0; padding: 0; }
+  .pp-honors li {
+    position: relative; padding: 10px 0 10px 20px;
+    font-size: 0.9rem; color: var(--text-2); line-height: 1.6;
+    border-bottom: 1px dashed var(--border);
+    overflow-wrap: anywhere;
+  }
+  .pp-honors li:last-child { border-bottom: none; }
+  .pp-honors li::before {
+    content: ''; position: absolute; left: 2px; top: 17px;
+    width: 7px; height: 7px; border-radius: 2px;
+    background: linear-gradient(135deg, #6366f1, #f59e0b); opacity: 0.85;
+  }
+
+  @media (max-width: 768px) {
+    .people-wrap { grid-template-columns: 1fr; gap: 18px; }
+    .people-nav { padding: 6px 0 6px 34px; }
+    .people-stage { height: 230px; }
+    .people-item.is-center { font-size: 1.21rem; }
+    .people-arc { width: 34px; }
+    .pp-body-card { grid-template-columns: 1fr; padding: 20px; }
+    .pp-head-card { padding: 20px; }
+    #ppSkinCanvas { width: 200px; height: 270px; }
+  }
+</style>
+
+<!-- skinview3d 3.4.2 本地库（MIT，内置拖拽/缩放控制） -->
+<script src="assets/js/skinview3d.bundle.js"></script>
+<script>
+  // ===== 玩家资料数据（在此编辑：增删改玩家、称号、荣誉事迹） =====
+  // skin: 留空则自动按用户名从 mc-heads.net 拉取皮肤；也可填本地路径如 'img/skinview3d/xxx.png'
+  // 数据来源：citizen_data.json（公开字段，不含身份证号）
+  const PEOPLE = [
+    {
+      name: 'lucas',
+      nickname: 'lucas',
+      tags: ['👑 管理员', '⭐ 米联支系第四任领导人'],
+      nation: '潮汐族',
+      city: '潮汐城',
+      date: '20240120',
+      address: '潮汐城苍白木别墅',
+      skin: '',
+      honors: ['米联支系第四任领导人', '潮汐城苍白木别墅的主人'],
+    },
+    {
+      name: 'nova',
+      nickname: 'nova',
+      tags: ['⭐ 米联支系第二代领导人'],
+      nation: '潮汐族',
+      city: '潮汐城',
+      date: '20240120',
+      address: '潮汐城',
+      skin: '',
+      honors: ['米联支系第二代领导人'],
+    },
+    {
+      name: 'ZBook',
+      nickname: 'ZBook',
+      tags: ['👑 管理员'],
+      nation: '秦族',
+      city: '闽州城',
+      date: '20260218',
+      address: '闽州神社',
+      skin: '',
+      honors: ['闽州神社的守护者'],
+    },
+    {
+      name: 'HinzaG',
+      nickname: 'HinzaG',
+      tags: ['🛡 公民'],
+      nation: '明遗族',
+      city: '阿穆尔生命制药公司',
+      date: '20240829',
+      address: '阿穆尔生命制药公司办公室',
+      skin: '',
+      honors: ['阿穆尔生命制药公司成员'],
+    },
+    {
+      name: 'jingfeng553',
+      nickname: 'jingfeng553',
+      tags: ['🛡 公民'],
+      nation: '亚速族',
+      city: '锡安城',
+      date: '20250222',
+      address: '潮汐城',
+      skin: '',
+      honors: ['锡安城居民'],
+    },
+  ];
+
+  const AVATAR_API = 'https://mc-heads.net/avatar';
+  const SKIN_API = 'https://mc-heads.net/skin';
+  const FALLBACK_SKIN = 'img/skinview3d/6613600812249701954.png'; // 网络皮肤拉取失败时的本地占位皮肤
+
+  let ppViewer = null;
+  let ppIdx = 0;
+
+  // 渲染左侧轮播舞台
+  function renderPeopleStage() {
+    const stage = document.getElementById('peopleStage');
+    stage.innerHTML = PEOPLE.map((p, i) =>
+      `<div class="people-item" data-idx="${i}">${escapeHtml(p.nickname || p.name)}</div>`).join('');
+    // 点击侧边名字 → 滑到该玩家（同城市轮播点击侧卡片）
+    stage.querySelectorAll('.people-item').forEach(el => {
+      el.addEventListener('click', () => ppGo(+el.dataset.idx));
+    });
+    layoutPeople();
+  }
+
+  // 按偏移量布局轮播：居中放大，两侧缩小/淡出（环形循环，取最短偏移）
+  // 跨界处理：从上侧绕到下侧（或反向）的名字会横穿舞台 → 先瞬间隐藏，再从边缘滑入
+  function layoutPeople(animate = true) {
+    const n = PEOPLE.length;
+    document.querySelectorAll('.people-item').forEach((el, i) => {
+      let off = i - ppIdx;
+      if (off > n / 2) off -= n;
+      if (off < -n / 2) off += n;
+
+      const target = off === 0 ? 'is-center'
+        : off === -1 ? 'is-up1'
+        : off === 1  ? 'is-down1'
+        : off === -2 ? 'is-up2'
+        : off === 2  ? 'is-down2'
+        : off < 0    ? 'is-far-up' : 'is-far-down';
+
+      const prev = el.dataset.slot || '';
+      const crossed = (prev.includes('up') && target.includes('down')) ||
+                      (prev.includes('down') && target.includes('up'));
+
+      if (crossed && animate) {
+        // 跨界两段动画均分总时长：滑出 .275s + 滑入 .275s = .55s，
+        // 与同侧名字的单段 .55s 完全同步结束，无先后延迟
+        el.className = 'people-item crossing ' + (prev.includes('down') ? 'is-far-down' : 'is-far-up');
+        clearTimeout(el._crossTimer);
+        el._crossTimer = setTimeout(() => {
+          el.className = 'people-item no-anim ' + (target.includes('down') ? 'is-far-down' : 'is-far-up');
+          void el.offsetWidth;  // 强制重排，让瞬移立即生效
+          el.className = 'people-item crossing ' + target;
+        }, 275);
+      } else {
+        // 同侧移动：正常过渡（含 up2→far-up 边缘滑出淡出）
+        el.className = 'people-item ' + target;
+      }
+      el.dataset.slot = target;
+    });
+  }
+
+  function ppSlide(dir) { ppGo((ppIdx + dir + PEOPLE.length) % PEOPLE.length); }
+  function ppGo(i) {
+    ppIdx = i;
+    layoutPeople();
+    showPerson(i);
+  }
+
+  // 展示指定玩家（轮播位置由 layoutPeople 负责）
+  function showPerson(i) {
+    const p = PEOPLE[i];
+
+    // 头像（拉取失败回退首字母）
+    const box = document.getElementById('ppAvatarBox');
+    const img = document.getElementById('ppAvatar');
+    img.style.display = 'none';
+    box.textContent = (p.nickname || p.name).slice(0, 1).toUpperCase();
+    img.onerror = () => { img.style.display = 'none'; };
+    img.onload = () => { img.style.display = 'block'; box.textContent = ''; };
+    img.src = `${AVATAR_API}/${encodeURIComponent(p.name)}/76`;
+
+    // 昵称 / 游戏名 / 称号
+    document.getElementById('ppNickname').textContent = p.nickname || p.name;
+    document.getElementById('ppName').textContent = p.name !== p.nickname ? `ID: ${p.name}` : '';
+    document.getElementById('ppTags').innerHTML = (p.tags || []).map(t =>
+      `<span class="pp-tag ${t.includes('管理员') ? 'hot' : ''}">${escapeHtml(t)}</span>`).join('');
+
+    // 公民信息：民族 · 城市 · 入籍日期 · 地址
+    const fmtDate = s => (s && s.length === 8) ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : (s || '');
+    document.getElementById('ppMeta').innerHTML = [
+      p.nation && `<span>🏳 ${escapeHtml(p.nation)}</span>`,
+      p.city && `<span>🏙 ${escapeHtml(p.city)}</span>`,
+      p.date && `<span>🗓 ${fmtDate(p.date)}</span>`,
+      p.address && `<span>📍 ${escapeHtml(p.address)}</span>`,
+    ].filter(Boolean).join('');
+
+    // 荣誉事迹
+    document.getElementById('ppHonorList').innerHTML = (p.honors || ['暂无记录'])
+      .map(h => `<li>${escapeHtml(h)}</li>`).join('');
+
+    // 3D 皮肤
+    loadPersonSkin(p);
+  }
+
+  let skinSeq = 0;  // 竞态防护：轮播快速切换时，只有最新请求能落块
+  function loadPersonSkin(p) {
+    if (!ppViewer) {
+      try {
+        ppViewer = new skinview3d.SkinViewer({
+          canvas: document.getElementById('ppSkinCanvas'),
+          width: 220,
+          height: 300,
+        });
+        ppViewer.autoRotate = true;
+        ppViewer.autoRotateSpeed = 0.5;
+        ppViewer.zoom = 0.9;
+        ppViewer.controls.enableRotate = true;
+        ppViewer.controls.enableZoom = true;
+        ppViewer.controls.enablePan = false;
+      } catch (e) { ppViewer = null; }
+    }
+    if (!ppViewer) return;
+    const seq = ++skinSeq;
+    const src = p.skin || `${SKIN_API}/${encodeURIComponent(p.name)}`;
+    // 拉取失败 → 本地占位皮肤，保证 3D 始终可见
+    ppViewer.loadSkin(src).catch(() => {
+      if (seq === skinSeq) ppViewer.loadSkin(FALLBACK_SKIN);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  renderPeopleStage();
+  ppGo(0);
+
+  // 移动端上下滑动切换（同城市轮播的触摸逻辑，改为纵向）
+  const ps = document.getElementById('peopleStage');
+  let pTouchY = null;
+  ps.addEventListener('touchstart', e => { pTouchY = e.touches[0].clientY; }, { passive: true });
+  ps.addEventListener('touchend', e => {
+    if (pTouchY === null) return;
+    const dy = e.changedTouches[0].clientY - pTouchY;
+    if (Math.abs(dy) > 40) ppSlide(dy > 0 ? -1 : 1);
+    pTouchY = null;
+  }, { passive: true });
+</script>
 
 <footer class="footer">
   <div class="container">
@@ -87,3 +491,4 @@
 
 <script src="assets/js/main.js?v=2"></script>
 </body>
+</html>
