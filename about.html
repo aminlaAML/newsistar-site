@@ -124,6 +124,13 @@
 </section>
 
 <style>
+  /* Unifont 像素字体（OFL-1.1，本地 latin 子集），仅左侧名字栏使用 */
+  @font-face {
+    font-family: 'Unifont';
+    src: url('assets/fonts/unifont-latin-400-normal.woff2') format('woff2');
+    font-weight: 400;
+    font-display: swap;
+  }
   /* ===== 人物介绍：书页式布局 ===== */
   .people-wrap {
     display: grid;
@@ -144,17 +151,18 @@
     width: 48px; height: 100%;
     pointer-events: none;
   }
-  /* 名字轮播舞台（index 城市轮播同款景深效果，纵向） */
+  /* 名字轮播舞台（不用 perspective：无 3D 变换且会干扰点击命中测试） */
   .people-stage {
     position: relative;
     height: 300px;
-    perspective: 900px;
   }
   .people-item {
     position: absolute;
     left: 50%; top: 50%;
     transform: translate(-50%, -50%);
+    font-family: 'Unifont', monospace;  /* 左侧名字栏专用像素字体 */
     font-size: 0.95rem; font-weight: 700; color: var(--text-2);
+    letter-spacing: 0.02em;
     white-space: nowrap; cursor: pointer;
     opacity: 0; pointer-events: none;
     transition: transform .55s cubic-bezier(.4,0,.2,1), opacity .55s ease, filter .55s ease;
@@ -162,7 +170,7 @@
   .people-item:hover { color: var(--text); }
   .people-item.is-center {
     opacity: 1; z-index: 10; pointer-events: auto;
-    font-size: 1.41rem; font-weight: 900; color: var(--text);
+    font-size: 1.41rem; font-weight: 700; color: var(--text);
     text-shadow: 0 0 18px rgba(99,102,241,.45);
     transform: translate(calc(-50% - 14px), -50%);  /* 居中并整体左移 */
   }
@@ -272,25 +280,40 @@
 <script src="assets/js/skinview3d.bundle.js"></script>
 <script>
   // ===== 玩家资料数据（在此编辑：增删改玩家、称号、荣誉事迹） =====
-  // skin: 留空则自动按用户名从 mc-heads.net 拉取皮肤；也可填本地路径如 'img/skinview3d/xxx.png'
+  // skin: 皮肤 PNG 路径（img/skinview3d/xxx.png）；avatar: 头像路径（img/avatar/xxx.png）
+  // 两者留空则分别回退占位皮肤 / 首字母方块（全本地，不依赖第三方皮肤站）
   // 数据来源：citizen_data.json（公开字段，不含身份证号）
   const PEOPLE = [
     {
-      name: 'lucas',
-      nickname: 'lucas',
-      tags: ['👑 管理员', '⭐ 米联支系第四任领导人'],
+      name: 'andymlatnt',
+      nickname: 'andymlatnt',
+      tags: ['⭐ 米联支系第一代领导人'],
       nation: '潮汐族',
-      city: '潮汐城',
+      gender: '男',
+      city: '潮汐城（七周目）',
       date: '20240120',
-      address: '潮汐城苍白木别墅',
+      address: '潮汐城（七周目）',
       skin: '',
-      honors: ['米联支系第四任领导人', '潮汐城苍白木别墅的主人'],
+      honors: ['米联支系第一代领导人'],
+    },
+    {
+      name: 'Xiao_ds',
+      nickname: 'Xiao_ds',
+      tags: ['⭐ 原大秦支系第一任领导人'],
+      nation: '潮汐族',
+      gender: '男',
+      city: '509X',
+      date: '20240120',
+      address: '伪大秦（九周目分裂城镇）',
+      skin: '',
+      honors: ['原大秦支系第一任领导人'],
     },
     {
       name: 'nova',
       nickname: 'nova',
       tags: ['⭐ 米联支系第二代领导人'],
       nation: '潮汐族',
+      gender: '男',
       city: '潮汐城',
       date: '20240120',
       address: '潮汐城',
@@ -298,43 +321,46 @@
       honors: ['米联支系第二代领导人'],
     },
     {
-      name: 'ZBook',
-      nickname: 'ZBook',
+      name: 'FISH__NOODLES',
+      nickname: 'FISH__NOODLES',
+      tags: ['⭐ 米联支系第三代领导人'],
+      nation: '潮汐族',
+      gender: '男',
+      city: '潮汐城',
+      date: '20240120',
+      address: '潮汐城临江私人别墅',
+      skin: '',
+      honors: ['米联支系第三代领导人'],
+    },
+    {
+      name: 'lucas',
+      nickname: 'lucas',
+      tags: ['👑 管理员', '⭐ 米联支系第四任领导人'],
+      nation: '潮汐族',
+      gender: '男',
+      city: '潮汐城',
+      date: '20240120',
+      address: '潮汐城苍白木别墅',
+      skin: 'img/skinview3d/lucas.png',
+      avatar: 'img/avatar/lucas.png',
+      honors: ['米联支系第四任领导人'],
+    },
+    {
+      name: 'aKr_1437',
+      nickname: 'aKr_1437',
       tags: ['👑 管理员'],
-      nation: '秦族',
-      city: '闽州城',
-      date: '20260218',
-      address: '闽州神社',
-      skin: '',
-      honors: ['闽州神社的守护者'],
-    },
-    {
-      name: 'HinzaG',
-      nickname: 'HinzaG',
-      tags: ['🛡 公民'],
-      nation: '明遗族',
-      city: '阿穆尔生命制药公司',
-      date: '20240829',
-      address: '阿穆尔生命制药公司办公室',
-      skin: '',
-      honors: ['阿穆尔生命制药公司成员'],
-    },
-    {
-      name: 'jingfeng553',
-      nickname: 'jingfeng553',
-      tags: ['🛡 公民'],
-      nation: '亚速族',
-      city: '锡安城',
-      date: '20250222',
-      address: '潮汐城',
-      skin: '',
-      honors: ['锡安城居民'],
+      nation: '雾津族',
+      gender: '女',
+      city: '津岚城',
+      date: '20260401',
+      address: '津岚城仙台中路附1-1',
+      skin: 'img/skinview3d/aKr_1437.png',
+      avatar: 'img/avatar/aKr_1437.png',
+      honors: ['先进建设者', '新汐斯塔网站主要建设者'],
     },
   ];
 
-  const AVATAR_API = 'https://mc-heads.net/avatar';
-  const SKIN_API = 'https://mc-heads.net/skin';
-  const FALLBACK_SKIN = 'img/skinview3d/6613600812249701954.png'; // 网络皮肤拉取失败时的本地占位皮肤
+  const FALLBACK_SKIN = 'img/skinview3d/lucas.png'; // 无专属皮肤时的本地占位皮肤
 
   let ppViewer = null;
   let ppIdx = 0;
@@ -400,14 +426,17 @@
   function showPerson(i) {
     const p = PEOPLE[i];
 
-    // 头像（拉取失败回退首字母）
+    // 头像：本地 avatar 图，无则显示首字母方块；img 缺失时跳过，不阻断后续信息更新
     const box = document.getElementById('ppAvatarBox');
     const img = document.getElementById('ppAvatar');
-    img.style.display = 'none';
-    box.textContent = (p.nickname || p.name).slice(0, 1).toUpperCase();
-    img.onerror = () => { img.style.display = 'none'; };
-    img.onload = () => { img.style.display = 'block'; box.textContent = ''; };
-    img.src = `${AVATAR_API}/${encodeURIComponent(p.name)}/76`;
+    if (box) box.textContent = (p.nickname || p.name).slice(0, 1).toUpperCase();
+    if (img) {
+      img.style.display = 'none';
+      img.onerror = () => { img.style.display = 'none'; if (box) box.textContent = (p.nickname || p.name).slice(0, 1).toUpperCase(); };
+      img.onload = () => { img.style.display = 'block'; if (box) box.textContent = ''; };
+      if (p.avatar) img.src = p.avatar;
+      else { img.removeAttribute('src'); if (box) box.textContent = (p.nickname || p.name).slice(0, 1).toUpperCase(); }
+    }
 
     // 昵称 / 游戏名 / 称号
     document.getElementById('ppNickname').textContent = p.nickname || p.name;
@@ -415,10 +444,11 @@
     document.getElementById('ppTags').innerHTML = (p.tags || []).map(t =>
       `<span class="pp-tag ${t.includes('管理员') ? 'hot' : ''}">${escapeHtml(t)}</span>`).join('');
 
-    // 公民信息：民族 · 城市 · 入籍日期 · 地址
+    // 公民信息：民族 · 性别 · 城市 · 入籍日期 · 地址
     const fmtDate = s => (s && s.length === 8) ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : (s || '');
     document.getElementById('ppMeta').innerHTML = [
       p.nation && `<span>🏳 ${escapeHtml(p.nation)}</span>`,
+      p.gender && `<span>${p.gender === '女' ? '♀' : '♂'} ${escapeHtml(p.gender)}</span>`,
       p.city && `<span>🏙 ${escapeHtml(p.city)}</span>`,
       p.date && `<span>🗓 ${fmtDate(p.date)}</span>`,
       p.address && `<span>📍 ${escapeHtml(p.address)}</span>`,
@@ -451,9 +481,8 @@
     }
     if (!ppViewer) return;
     const seq = ++skinSeq;
-    const src = p.skin || `${SKIN_API}/${encodeURIComponent(p.name)}`;
-    // 拉取失败 → 本地占位皮肤，保证 3D 始终可见
-    ppViewer.loadSkin(src).catch(() => {
+    // 无专属皮肤 → 本地占位皮肤（全本地资源，无第三方请求）
+    ppViewer.loadSkin(p.skin || FALLBACK_SKIN).catch(() => {
       if (seq === skinSeq) ppViewer.loadSkin(FALLBACK_SKIN);
     });
   }
