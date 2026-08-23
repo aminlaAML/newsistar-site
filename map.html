@@ -443,12 +443,17 @@
       gl.uniformMatrix4fv(mLoc.uMVP, false, mul(proj, view));
       gl.uniform1f(mLoc.uYMin, yMin); gl.uniform1f(mLoc.uYMax, yMax);
       const ready = chunks.filter(c => c.state === 'rising' || c.state === 'done');
+      // 区块当前上升偏移：easeOutCubic 无回弹，模型上浮不会超过稳定高度
+      function chunkRise(c) {
+        const dur = RISE_DUR * (window.__slow ? 4 : 1);
+        const t = c.state === 'done' ? 1 : Math.min(1, (now - c.riseStart) / dur);
+        const ease = 1 - Math.pow(1 - t, 3);
+        return -c.drop * (1 - ease);
+      }
       function drawChunk(c, matFilter) {
         const dur = RISE_DUR * (window.__slow ? 4 : 1);
         let t = c.state === 'done' ? 1 : Math.min(1, (now - c.riseStart) / dur);
-        const tm = t - 1;   // easeOutBack：上浮到位后轻微回弹，落定"对齐"感
-        const ease = 1 + 1.9 * tm * tm * tm + 0.9 * tm * tm;
-        const riseY = -c.drop * (1 - ease);
+        const riseY = chunkRise(c);
         const alpha = Math.min(1, t * 2.2);
         const off = [c.origin[0], c.origin[1] + riseY, c.origin[2]];
         gl.uniform3f(mLoc.uOffset, off[0], off[1], off[2]);
@@ -472,23 +477,25 @@
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
       for (const c of ready) drawChunk(c, 'trans');
 
-      // ---- 粒子（加色混合）：斑点/线条分两批，各一次 drawArrays ----
+      // ---- 粒子（加色混合）：依附模型——跟随模型上浮 + 深度遮挡（只在模型表面发光） ----
       const lineVerts = [], dotVerts = [];
       for (const c of ready) {
         if (!c.fx || !c.fx.length) continue;
         const env = fxEnvelope(c, now);
         if (env <= 0) { c.fx = null; continue; }
+        const riseY = chunkRise(c);   // 与模型同步的上升偏移
         const top = c.origin[1] + c.entry.sy + 5, bottom = c.origin[1] - c.drop * 0.45;
         for (const pt of c.fx) {
           pt.y += pt.speed * dt;
           if (pt.y > top) pt.y = bottom;
           const flick = 0.55 + 0.65 * Math.abs(Math.sin(now * pt.flick + pt.phase));
           const a = env * flick;
+          const py = pt.y + riseY;   // 粒子世界 Y = 局部 Y + 模型上升偏移
           if (pt.line) {
-            lineVerts.push(pt.x, pt.y, pt.z, pt.col[0], pt.col[1], pt.col[2], a, 0,
-              pt.x, pt.y - pt.len, pt.z, pt.col[0] * 0.3, pt.col[1] * 0.3, pt.col[2] * 0.3, a * 0.35, 0);
+            lineVerts.push(pt.x, py, pt.z, pt.col[0], pt.col[1], pt.col[2], a, 0,
+              pt.x, py - pt.len, pt.z, pt.col[0] * 0.3, pt.col[1] * 0.3, pt.col[2] * 0.3, a * 0.35, 0);
           } else {
-            dotVerts.push(pt.x, pt.y, pt.z, pt.col[0], pt.col[1], pt.col[2], a, pt.size * dpr);
+            dotVerts.push(pt.x, py, pt.z, pt.col[0], pt.col[1], pt.col[2], a, pt.size * dpr);
           }
         }
       }
@@ -507,10 +514,9 @@
         };
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE);   // 加色发光
         gl.depthMask(false);
-        gl.disable(gl.DEPTH_TEST);            // 粒子不做深度遮挡：光效穿透结构，能量感
+        gl.enable(gl.DEPTH_TEST);             // 依附模型：被模型遮挡，粒子只在表面/外部可见
         bindAndDraw(lineVerts, gl.LINES);
         bindAndDraw(dotVerts, gl.POINTS);
-        gl.enable(gl.DEPTH_TEST);
       }
       gl.depthMask(true); gl.disable(gl.BLEND);
 
