@@ -112,19 +112,51 @@
       return s;
     }
     // 建筑网格：白模高度渐变 / 玻璃 / 水（与转换工具一致的观感）
+    // uFx=uSxPhase 期间模型表面直接渲染绿粉科技纹样（格子分区+向下流动扫描光带），随上升褪去
     const meshVS = 'attribute vec3 aPos; attribute vec3 aNor; uniform mat4 uMVP; uniform vec3 uOffset;' +
-      'varying vec3 vNor; varying float vWy;' +
-      'void main(){ vec3 p = aPos + uOffset; gl_Position = uMVP * vec4(p, 1.0); vNor = aNor; vWy = p.y; }';
-    const meshFS = 'precision mediump float; varying vec3 vNor; varying float vWy;' +
-      'uniform vec3 uColor; uniform float uAlpha, uGrad, uYMin, uYMax;' +
+      'varying vec3 vNor; varying vec3 vW;' +
+      'void main(){ vec3 p = aPos + uOffset; gl_Position = uMVP * vec4(p, 1.0); vNor = aNor; vW = p; }';
+    const meshFS = 'precision mediump float; varying vec3 vNor; varying vec3 vW;' +
+      'uniform vec3 uColor; uniform float uAlpha, uGrad, uYMin, uYMax, uFx, uFxPhase;' +
+      'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }' +
       'void main(){' +
       ' vec3 N = normalize(vNor); if(!gl_FrontFacing) N = -N;' +
       ' float d1 = max(dot(N, normalize(vec3(0.4,0.8,0.55))), 0.0);' +
       ' float d2 = max(dot(N, normalize(vec3(-0.55,0.15,-0.6))), 0.0);' +
-      ' float t = clamp((vWy - uYMin) / max(uYMax - uYMin, 1.0), 0.0, 1.0);' +
+      ' float t = clamp((vW.y - uYMin) / max(uYMax - uYMin, 1.0), 0.0, 1.0);' +
       ' vec3 grad = mix(vec3(0.88,0.92,0.98), vec3(1.0), t);' +
       ' vec3 base = mix(uColor, grad, uGrad);' +
-      ' gl_FragColor = vec4(base * (0.52 + 0.44*d1 + 0.18*d2), uAlpha); }';
+      ' vec3 col = base * (0.52 + 0.44*d1 + 0.18*d2);' +
+      // ==== 绿粉构建特效：纯色块为主 + 线条斑点点缀 ====
+      // 扫描线从模型顶(1.0)随进度降到(0.0)：线以上的部分已构建完成→褪为白模，
+      // 线以下仍在构建→绿粉纯色。颜色从上往下逐层排空，不是整体消退
+      ' if (uFx > 0.001) {' +
+      '   float buildLine = 1.0 - uFxPhase;' +
+      '   float hNorm = clamp((vW.y - uYMin) / max(uYMax - uYMin, 1.0), 0.0, 1.0);' +
+      //   构建中 = 扫描线以下（hNorm < buildLine）
+      '   float building = smoothstep(buildLine + 0.06, buildLine - 0.06, hNorm);' +
+      //   大格子纯色块（32 格宽）：绿/粉随机分区，整块纯色
+      '   vec3 cell3 = floor(vW * 0.03125);' +
+      '   float h = hash(cell3.xy + cell3.z * 7.31);' +
+      '   vec3 fxCol = mix(vec3(0.42, 0.98, 0.60), vec3(1.0, 0.50, 0.92), step(0.5, h));' +
+      //   纯色覆盖（构建中的部分）：块面 90% 强度
+      '   vec3 solid = fxCol * 0.85;' +
+      //   线条：大格边线提亮（勾出块的结构）
+      '   vec3 gf = abs(fract(vW * 0.03125) - 0.5);' +
+      '   float edge = 1.0 - smoothstep(0.0, 0.08, min(min(gf.x, gf.y), gf.z));' +
+      '   solid = mix(solid, fxCol * 1.4, edge * 0.8);' +
+      //   斑点：稀疏 hash 亮斑（每 8 格一个小亮点）
+      '   vec3 spot3 = floor(vW * 0.125);' +
+      '   float spot = step(0.93, hash(spot3.xy + spot3.z * 3.7));' +
+      '   solid = mix(solid, vec3(1.3), spot * 0.9);' +
+      //   构建边界光带：扫描线本身高亮渐变
+      '   float bandGlow = smoothstep(0.10, 0.0, abs(hNorm - buildLine));' +
+      '   vec3 bandCol = vec3(0.75, 0.97, 1.0);' +
+      '   vec3 fx = mix(solid, bandCol * 1.3, bandGlow * 0.85);' +
+      //   应用：构建中(building=1)全特效，已构建(building=0)白模
+      '   col = mix(col, fx, uFx * building);' +
+      ' }' +
+      ' gl_FragColor = vec4(col, uAlpha); }';
     // 粒子：加色混合的绿/粉线条与光点
     const partVS = 'attribute vec3 aPos; attribute vec4 aCol; attribute float aSize;' +
       'uniform mat4 uMVP; varying vec4 vCol;' +
@@ -149,6 +181,7 @@
       uColor: gl.getUniformLocation(meshProg, 'uColor'), uAlpha: gl.getUniformLocation(meshProg, 'uAlpha'),
       uGrad: gl.getUniformLocation(meshProg, 'uGrad'), uYMin: gl.getUniformLocation(meshProg, 'uYMin'),
       uYMax: gl.getUniformLocation(meshProg, 'uYMax'),
+      uFx: gl.getUniformLocation(meshProg, 'uFx'), uFxPhase: gl.getUniformLocation(meshProg, 'uFxPhase'),
     };
     const pLoc = {
       aPos: gl.getAttribLocation(partProg, 'aPos'), aCol: gl.getAttribLocation(partProg, 'aCol'),
@@ -264,6 +297,14 @@
       for (const c of chunks) {
         if (c.state === 'loading' || c.state === 'rising' || (c.state === 'pending' && c.scheduled)) return;
       }
+      // 网络抖动导致的失败区块：重置重试（最多 3 次），避免永久缺口
+      const retry = chunks.filter(c => c.state === 'failed' && (c.retries || 0) < 3);
+      if (retry.length) {
+        const c = retry[0];
+        c.state = 'pending'; c.scheduled = true;
+        c.schedAt = performance.now() / 1000;
+        return;
+      }
       const pend = chunks.filter(c => c.state === 'pending');
       if (!pend.length) return;
       let ax = 0, az = 0, n = 0;
@@ -326,42 +367,67 @@
         .then(finish)
         .catch(e => {
           console.error('[maps] 区块加载失败', c.entry.file, e);
+          c.retries = (c.retries || 0) + 1;
           c.state = 'failed';
           scheduleNeighbors(c);   // 失败也要放行邻居，避免孤岛
           checkAllFailed();
         });
     }
 
-    /* ---------- 粒子特效：浅绿/浅粉 线条 + 斑点 ---------- */
-    const GREEN = [0.42, 0.98, 0.60], PINK = [1.0, 0.60, 0.78];
+    /* ---------- 粒子特效：浅绿/浅粉 线条 + 斑点（只依附实体表面，不出现在空气处） ---------- */
+    const GREEN = [0.42, 0.98, 0.60], PINK = [1.0, 0.50, 0.92];
+    // 从区块几何顶点采样实体表面点（抽稀控制数量），粒子只在有实体的位置生成
+    function buildSurfacePoints(c) {
+      const pts = [];
+      const total = c.prims.reduce((a, p) => a + p.pos.length, 0);
+      if (!total) return pts;
+      const step = Math.max(3, Math.floor(total / 3 / 6000));   // 每区块最多约 6000 采样点
+      for (const p of c.prims) {
+        const pos = p.pos;
+        for (let i = 0; i < pos.length; i += step * 3) {
+          pts.push(pos[i], pos[i + 1], pos[i + 2]);
+        }
+      }
+      return pts;
+    }
     function spawnFX(c) {
-      const area = c.entry.sx * c.entry.sz;
-      const n = Math.min(340, Math.max(120, Math.round(area / 8)));
+      const surf = buildSurfacePoints(c);
+      // 粒子仅作点缀（表面覆盖由着色器完成）：数量压到很低
+      const n = Math.min(80, Math.max(24, Math.round((surf.length / 3 || 1) * 0.008)));
       const ps = [];
       for (let i = 0; i < n; i++) {
-        const isLine = Math.random() < 0.68;
-        const col = Math.random() < 0.5 ? GREEN : PINK;
-        const b = 0.95 + Math.random() * 0.45;   // >1 的亮度配合加色混合=发光
+        const si = ((Math.random() * surf.length / 3) | 0) * 3;
+        const sx = surf[si] || 0, sy = surf[si + 1] || 0, sz = surf[si + 2] || 0;
+        const isLine = Math.random() < 0.55;   // 更多独立斑点（更醒目，不被线条覆盖）
+        // 粉色多于绿色（都大胆）；粉色偏移更大让其浮到模型轮廓外深背景上可见
+        const col = Math.random() < 0.6 ? PINK : GREEN;
+        // 亮度：绿色可拉高；粉色提高 B 保持高亮纯粉（避免加色混合被白色模型稀释成不可见）
+        const b = col === PINK ? (1.0 + Math.random() * 0.4) : (1.0 + Math.random() * 0.55);
+        const spread = col === PINK ? 2.6 : 1.6;   // 粉色更多浮出轮廓
         ps.push({
           line: isLine,
-          x: c.origin[0] + Math.random() * c.entry.sx,
-          z: c.origin[2] + Math.random() * c.entry.sz,
-          y: c.origin[1] - c.drop * 0.4 + Math.random() * (c.entry.sy + c.drop * 0.5),
-          speed: 4 + Math.random() * 9,
-          len: 2.5 + Math.random() * 5.5,
+          bx: sx, by: sy, bz: sz,               // 实体表面基准点
+          x: sx + (Math.random() - 0.5) * spread,
+          z: sz + (Math.random() - 0.5) * spread,
+          y: sy + (Math.random() - 0.5) * 1.2,
+          speed: 1.2 + Math.random() * 4.5,     // 更快流动 = 科技感
+          len: 2.2 + Math.random() * 5,
           col: [col[0] * b, col[1] * b, col[2] * b],
           phase: Math.random() * Math.PI * 2,
-          flick: 2 + Math.random() * 4.5,
-          size: 5 + Math.random() * 8,
+          flick: 3 + Math.random() * 6,
+          size: 6 + Math.random() * 9,
         });
       }
       c.fx = ps;
     }
     function fxEnvelope(c, now) {
-      const t = (now - c.riseStart) / (RISE_DUR * (window.__slow ? 4 : 1));
-      if (t < 0) return 0;
-      if (t < 1) return Math.min(1, t * 3);
-      return Math.max(0, 1 - (t - 1) / 0.7);   // 落定后 0.7s 淡出
+      // 强度包络：0.1 内快速显现 → 全程保持 1（消退由着色器扫描线逐层完成）→ 落定归零
+      const dur = RISE_DUR * (window.__slow ? 4 : 1);
+      const t = c.state === 'done' ? 1 : Math.min(1, (now - c.riseStart) / dur);
+      if (t <= 0) return 0;
+      if (t >= 1) return 0;          // 落定：扫描线已到底，无残留
+      if (t < 0.1) return t / 0.1;   // 快速显现
+      return 1;
     }
 
     /* ---------- 相机 / 交互 ---------- */
@@ -457,6 +523,9 @@
         const alpha = Math.min(1, t * 2.2);
         const off = [c.origin[0], c.origin[1] + riseY, c.origin[2]];
         gl.uniform3f(mLoc.uOffset, off[0], off[1], off[2]);
+        // 表面绿粉科技纹样：强度=fxEnvelope，相位=上升进度（驱动扫描带下移）
+        gl.uniform1f(mLoc.uFx, fxEnvelope(c, now));
+        gl.uniform1f(mLoc.uFxPhase, t);
         for (const b of c.bufs) {
           if (matFilter === 'opaque' ? b.matIdx !== 0 : b.matIdx === 0) continue;
           const st = MAT_STYLE[b.matIdx] || MAT_STYLE[0];
@@ -484,12 +553,22 @@
         const env = fxEnvelope(c, now);
         if (env <= 0) { c.fx = null; continue; }
         const riseY = chunkRise(c);   // 与模型同步的上升偏移
-        const top = c.origin[1] + c.entry.sy + 5, bottom = c.origin[1] - c.drop * 0.45;
+        // 科技扫描十字线：模型上升时在顶部画冷青发光扫描线（随模型上浮，褪去期同步淡出）
+        if (c.state === 'rising') {
+          const scanY = c.origin[1] + riseY + c.entry.sy * 0.96;
+          const cx = c.origin[0] + c.entry.sx / 2, cz = c.origin[2] + c.entry.sz / 2;
+          const a = env * 0.9;
+          const sc = [0.55, 0.95, 1.0];
+          lineVerts.push(c.origin[0], scanY, cz, sc[0], sc[1], sc[2], a, 0,
+            c.origin[0] + c.entry.sx, scanY, cz, sc[0], sc[1], sc[2], a * 0.45, 0);
+          lineVerts.push(cx, scanY, c.origin[2], sc[0], sc[1], sc[2], a, 0,
+            cx, scanY, c.origin[2] + c.entry.sz, sc[0], sc[1], sc[2], a * 0.45, 0);
+        }
         for (const pt of c.fx) {
           pt.y += pt.speed * dt;
-          if (pt.y > top) pt.y = bottom;
-          const flick = 0.55 + 0.65 * Math.abs(Math.sin(now * pt.flick + pt.phase));
-          const a = env * flick;
+          if (pt.y > pt.by + 5) pt.y = pt.by - 5;   // 在实体表面附近小幅循环，不飘向空气
+          const flick = 0.6 + 0.6 * Math.abs(Math.sin(now * pt.flick + pt.phase));
+          const a = env * flick * 0.6;   // 低密度点缀：单个粒子更淡，不抢戏
           const py = pt.y + riseY;   // 粒子世界 Y = 局部 Y + 模型上升偏移
           if (pt.line) {
             lineVerts.push(pt.x, py, pt.z, pt.col[0], pt.col[1], pt.col[2], a, 0,
@@ -512,11 +591,13 @@
           gl.enableVertexAttribArray(pLoc.aSize); gl.vertexAttribPointer(pLoc.aSize, 1, gl.FLOAT, false, stride, 28);
           gl.drawArrays(mode, 0, arr.length / 8);
         };
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);   // 加色发光
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);   // 半透明覆盖：粒子光膜铺满模型表面（加色在白色上不可见）
         gl.depthMask(false);
-        gl.enable(gl.DEPTH_TEST);             // 依附模型：被模型遮挡，粒子只在表面/外部可见
+        gl.depthFunc(gl.LEQUAL);            // 允许与模型表面共面的粒子通过 → 覆盖模型表面
+        gl.enable(gl.DEPTH_TEST);           // 模型内部的粒子仍被遮挡
         bindAndDraw(lineVerts, gl.LINES);
         bindAndDraw(dotVerts, gl.POINTS);
+        gl.depthFunc(gl.LESS);
       }
       gl.depthMask(true); gl.disable(gl.BLEND);
 
