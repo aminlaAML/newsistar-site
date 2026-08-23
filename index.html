@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="assets/css/style.css">
   <link rel="icon" href="/favicon.ico" type="image/x-icon">
   <link rel="apple-touch-icon" href="/favicon.ico">
+  <link rel="stylesheet" href="assets/css/ark-ui.css">
 </head>
 <body>
 
@@ -33,6 +34,11 @@
   <section class="hero">
     <div class="hero-bg" style="background-image: url('home.png');"></div> <!-- 首页头图为home.png -->
     <div class="hero-content">
+      <div class="hero-en">
+        <span class="hero-en-mark">◆</span>
+        <span class="hero-en-txt">NEWSISTAR&nbsp;REPUBLIC</span>
+        <span class="hero-en-line"></span>
+      </div>
       <h1>新汐斯塔 <span class="accent">共和国</span></h1>
       <p>在FishPort服务器上由玩家打造的虚拟国度。</p>
       <div class="hero-actions">
@@ -40,6 +46,17 @@
     </div>
     <div class="hero-scroll">↓ 向下滚动</div>
   </section>
+
+  <!-- ===== BREAKING NEWS 公告条（最新公告，方舟式） ===== -->
+  <div id="breakingBar" class="breaking" style="display:none">
+    <div class="container breaking-in">
+      <div class="breaking-tag">◆ BREAKING<br>NEWS</div>
+      <div class="breaking-body">
+        <span class="breaking-date" id="breakingDate"></span>
+        <span class="breaking-title" id="breakingTitle"></span>
+      </div>
+    </div>
+  </div>
 
   <section>
     <div class="container">
@@ -71,60 +88,120 @@
   </section>
 
   <style>
-  .news-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;margin-top:8px;}
-  .news-card{
-    background:var(--glass);backdrop-filter:blur(12px);
-    border:1px solid var(--border);border-radius:var(--radius-lg);
-    padding:26px 24px;position:relative;overflow:hidden;
-    transition:transform .3s cubic-bezier(.4,0,.2,1),box-shadow .3s,border-color .3s;
+  .news-grid{display:block;margin-top:8px;}
+  /* 方舟式公告行 */
+  .news-row{
+    display:flex;flex-wrap:wrap;align-items:center;gap:16px;
+    padding:15px 20px;margin-top:6px;
+    border:1px solid var(--border);border-radius:3px;
+    background:var(--surface);cursor:pointer;
+    transition:border-color .2s,background-color .2s,transform .2s;
+    clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%);
   }
-  .news-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg);border-color:var(--border-hover);}
-  .news-card::before{
-    content:'';position:absolute;top:0;left:0;right:0;height:3px;
-    background:linear-gradient(90deg,var(--primary),var(--accent));
+  .news-row:hover{border-color:var(--border-hover);background:var(--surface-hover);transform:translateX(4px);}
+  .news-row-tag{
+    flex-shrink:0;padding:3px 10px;font-size:.72rem;font-weight:700;letter-spacing:.14em;
+    color:#dfe9f5;background:linear-gradient(135deg,#2c3d57,#1c2737);
+    border:1px solid rgba(140,180,225,.35);
   }
-  .news-date{
-    display:inline-flex;align-items:center;gap:6px;
-    font-size:.78rem;color:var(--text-muted);margin-bottom:10px;
+  .news-row-date{flex-shrink:0;color:var(--primary-light);font-family:ui-monospace,SFMono-Regular,monospace;font-size:.82rem;letter-spacing:.04em;}
+  .news-row-title{flex:1;font-size:.98rem;font-weight:600;color:var(--text);margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .news-row-arrow{color:var(--primary-light);opacity:.6;flex-shrink:0;transition:transform .2s;}
+  /* 展开的正文区（JS 精确 max-height + 左侧滑入 + 淡入） */
+  .news-row-body{
+    flex-basis:100%;overflow:hidden;
+    max-height:0;opacity:0;
+    transform:translateX(-18px);
+    transition:max-height .4s cubic-bezier(.4,0,.2,1),opacity .3s ease,transform .35s cubic-bezier(.4,0,.2,1);
+    font-size:.9rem;color:var(--text-2);line-height:1.75;
   }
-  .news-title{font-size:1.15rem;font-weight:800;color:var(--text);margin-bottom:10px;line-height:1.4;}
-  .news-content{font-size:.92rem;color:var(--text-2);line-height:1.7;white-space:pre-wrap;word-break:break-word;}
-  .news-author{
-    margin-top:14px;padding-top:12px;border-top:1px solid var(--border);
-    font-size:.8rem;color:var(--accent);font-weight:600;
-  }
+  .news-row-inner{padding-top:10px;border-top:1px solid var(--border);}
+  .news-row-inner p{margin:0 0 8px;}
+  .news-row.open .news-row-body{opacity:1;transform:translateX(0);}
+  .news-row.open .news-row-arrow{transform:rotate(90deg);}
+  .news-row-author{color:var(--accent);font-size:.78rem;letter-spacing:.08em;}
+  .news-row-content{white-space:pre-wrap;word-break:break-word;}
   .news-empty{
-    grid-column:1/-1;text-align:center;padding:48px 20px;
+    text-align:center;padding:48px 20px;
     color:var(--text-muted);font-size:.95rem;
-    background:var(--surface);border:1px dashed var(--border);border-radius:var(--radius-lg);
+    background:var(--surface);border:1px dashed var(--border);border-radius:4px;
   }
+  /* BREAKING NEWS 公告条 */
+  .breaking{background:rgba(13,17,25,.92);border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
+  .breaking-in{display:flex;align-items:stretch;min-height:62px;}
+  .breaking-tag{
+    display:flex;flex-direction:column;justify-content:center;align-items:center;
+    padding:0 22px;background:linear-gradient(135deg,#25344d,#1a2537);
+    color:#dfe9f5;font-weight:800;font-size:.76rem;line-height:1.3;letter-spacing:.16em;
+    clip-path:polygon(0 0,100% 0,calc(100% - 14px) 100%,0 100%);
+    border-right:1px solid rgba(140,180,225,.3);flex-shrink:0;
+  }
+  .breaking-body{display:flex;align-items:center;gap:18px;padding:0 22px;flex:1;min-width:0;}
+  .breaking-date{color:var(--primary-light);font-family:ui-monospace,SFMono-Regular,monospace;font-size:.85rem;white-space:nowrap;}
+  .breaking-title{color:var(--text);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  /* Hero 英文大标签 */
+  .hero-en{display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:20px;
+    color:var(--primary-light);font-weight:700;letter-spacing:.42em;font-size:.82rem;}
+  .hero-en-mark{color:var(--accent);font-size:.7rem;}
+  .hero-en-line{width:56px;height:1px;background:linear-gradient(90deg,var(--primary),transparent);}
   </style>
 
   <script>
   (function loadNews(){
     const API = 'https://api.newsistar.com';
-    fetch(API + '/api/news?limit=6')
+    const arkDate = ts => {
+      const d = new Date(ts * 1000);
+      const p = n => String(n).padStart(2, '0');
+      return d.getFullYear() + ' // ' + p(d.getMonth() + 1) + ' / ' + p(d.getDate());
+    };
+    // 首页只显示最近 3 条，其余保留在后端（后续新闻页用同一 API 展示全部）
+    fetch(API + '/api/news?limit=3')
       .then(r => r.ok ? r.json() : null)
       .then(r => {
         if (!r || !r.data || !r.data.length) return; // 无新闻保持占位
-        document.getElementById('newsList').innerHTML = r.data.map(n => `
-          <article class="news-card">
-            <div class="news-date">🕐 ${new Date(n.created_at * 1000).toLocaleDateString('zh-CN', {year:'numeric',month:'long',day:'numeric'})}</div>
-            <h3 class="news-title"></h3>
-            <div class="news-content"></div>
-            <div class="news-author">发布者：${n.author}</div>
-          </article>`).join('');
+        const list = r.data;
+        // BREAKING NEWS 条：取最新一条
+        document.getElementById('breakingBar').style.display = 'block';
+        document.getElementById('breakingDate').textContent = arkDate(list[0].created_at);
+        document.getElementById('breakingTitle').textContent = list[0].title;
+        // 公告列表（分类 + 方舟日期 + 标题，点击展开正文）
+         document.getElementById('newsList').innerHTML = list.map((n, i) => `
+           <article class="news-row">
+             <span class="news-row-tag">公告</span>
+             <span class="news-row-date">${arkDate(n.created_at)}</span>
+             <h3 class="news-row-title"></h3>
+             <span class="news-row-arrow">→</span>
+             <div class="news-row-body">
+                <div class="news-row-inner">
+                  <p class="news-row-content"></p>
+                  <div class="news-row-author">发布者：</div>
+                </div>
+              </div>
+           </article>`).join('');
         // 安全填充文本（防XSS）
-        document.querySelectorAll('.news-card').forEach((card, i) => {
-          card.querySelector('.news-title').textContent = r.data[i].title;
-          card.querySelector('.news-content').textContent = r.data[i].content;
+        document.querySelectorAll('.news-row-title').forEach((el, i) => { el.textContent = list[i].title; });
+        document.querySelectorAll('.news-row-content').forEach((el, i) => { el.textContent = list[i].content; });
+        document.querySelectorAll('.news-row-author').forEach((el, i) => { el.textContent += list[i].author; });
+        // 点击展开/收起正文（JS 精确测高驱动动画）
+        document.querySelectorAll('.news-row').forEach(row => {
+          const body = row.querySelector('.news-row-body');
+          row.addEventListener('click', () => {
+            const opening = !row.classList.contains('open');
+            if (opening) {
+              row.classList.add('open');
+              body.style.maxHeight = body.scrollHeight + 'px';
+            } else {
+              body.style.maxHeight = '0px';
+              row.classList.remove('open');
+            }
+          });
         });
       })
       .catch(() => {}); // 网络失败保持"暂无新闻"
   })();
   </script>
 
-  <!-- ===== 城市轮播 ===== -->
+  <!-- ===== 城市轮播（真实截图优先，无截图显示城市名占位，不使用 AI 图） ===== -->
   <section style="background: var(--bg-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 80px 0;">
     <div class="container">
       <span class="section-tag" style="display:block; text-align:center;">城市巡礼</span>
@@ -151,7 +228,24 @@
     border:1px solid var(--border);background:var(--bg-3);
     box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;cursor:pointer;
   }
-  .city-card img{width:100%;height:320px;object-fit:cover;display:block;}
+  /* 城市缩略：真实截图显示在占位之上；无图时显示渐变 + 城名 */
+  .city-thumb{position:relative;width:100%;height:320px;overflow:hidden;
+    background:linear-gradient(150deg,#1b2333 0%,#25344d 55%,#1d2a40 100%);}
+  .city-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;}
+  .city-fallback{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:8px;
+    background:radial-gradient(ellipse at 50% 35%,rgba(127,168,212,.14),transparent 70%);
+  }
+  .city-fallback .mk{
+    width:52px;height:52px;display:flex;align-items:center;justify-content:center;
+    border:1px solid rgba(159,179,211,.5);transform:rotate(45deg);
+    font-size:1.5rem;font-weight:800;color:#9fb3d3;background:rgba(127,168,212,.08);
+    box-shadow:0 0 24px rgba(127,168,212,.2);
+  }
+  .city-fallback .mk span{transform:rotate(-45deg);}
+  .city-fallback .nm{font-size:1.35rem;font-weight:800;letter-spacing:.3em;color:#cdd9ea;}
+  .city-card img.off{display:none;}
 
   /* 当前居中卡片 */
   .city-card.is-center{left:50%;transform:translate(-50%,-50%) scale(1);opacity:1;z-index:10;pointer-events:auto;filter:none;}
@@ -171,8 +265,8 @@
     transition:opacity .35s ease;max-width:680px;margin:0 auto;
   }
   .city-info-panel.fading{opacity:0;}
-  .city-title{font-size:1.7rem;font-weight:800;color:var(--text);}
-  .city-lord{margin-top:6px;font-size:1.05rem;color:var(--accent);font-weight:600;}
+  .city-title{font-size:1.7rem;font-weight:800;color:var(--text);letter-spacing:.03em;}
+  .city-lord{margin-top:6px;font-size:1.05rem;color:var(--accent);font-weight:600;letter-spacing:.18em;}
   .city-desc{margin-top:10px;color:var(--text-2);line-height:1.7;font-size:1rem;}
 
   .city-dots{display:flex;justify-content:center;gap:8px;margin-top:20px;flex-wrap:wrap;}
@@ -183,7 +277,7 @@
     #cityshow{max-width:100%;padding:0 16px;}
     .city-stage{height:280px;}
     .city-card{width:300px;}
-    .city-card img{height:200px;}
+    .city-thumb{height:200px;}
     .city-card.is-center{transform:translate(-50%,-50%) scale(1);}
     .city-card.is-left1{transform:translate(calc(-50% - 190px),-50%) scale(.6);}
     .city-card.is-right1{transform:translate(calc(-50% + 190px),-50%) scale(.6);}
@@ -194,107 +288,26 @@
   </style>
 
   <script>
-    let CITIES;
-    CITIES = [
-      {
-        name: "莆阳城",
-        lord: "2323qw",
-        img: "Minecraft%20style%20ancient%20Chinese%20riverside%20city%2C%20wooden%20pagodas%2C%20lanterns%20reflecting%20on%20water%2C%20warm%20evening%20light%2C%20cinematic",
-        desc: "古朴的水乡之城，木楼倒映河面，灯笼长明不熄。"
-      },
-      {
-        name: "永宁城",
-        lord: "yao2233",
-        img: "Minecraft%20style%20grand%20stone%20citadel%20on%20plains%2C%20tall%20watchtowers%2C%20banner%20flags%2C%20defensive%20walls%2C%20golden%20hour",
-        desc: "平原上的永久要塞，高墙永守，安宁无虞。"
-      },
-      {
-        name: "鮀济大湾区",
-        lord: "tychen",
-        img: "Minecraft%20style%20modern%20coastal%20megacity%20skyline%2C%20skyscrapers%2C%20harbor%20cranes%2C%20neon%20lights%2C%20night%20view%2C%20futuristic",
-        desc: "蛇济湾畔的繁华都市群，贸易与科技交汇之地。"
-      },
-      {
-        name: "琉球首里城",
-        lord: "tpoak",
-        img: "Minecraft%20style%20Okinawan%20castle%20on%20hill%2C%20red%20roofs%2C%20tropical%20palms%2C%20ocean%20view%2C%20sunset%2C%20serene",
-        desc: "海岛山丘上的琉球古王城，红瓦绿椰，碧海蓝天。"
-      },
-      {
-        name: "安西自由城",
-        lord: "sun123321",
-        img: "Minecraft%20style%20desert%20oasis%20trading%20city%2C%20sandstone%20buildings%2C%20market%20stalls%2C%20camels%2C%20palm%20trees%2C%20warm%20sun",
-        desc: "大漠绿洲中的自由商贸城，八方商旅汇聚之所。"
-      },
-      {
-        name: "阿穆尔生命制药公司",
-        lord: "HinzaG",
-        img: "Minecraft%20style%20futuristic%20pharma%20lab%20complex%2C%20glowing%20green%20tubes%2C%20glass%20domes%2C%20potion%20brewing%2C%20science%20facility",
-        desc: "以生命科学为核心的制药巨头总部， potions 与药剂的生产中心。"
-      },
-      {
-        name: "断荒城",
-        lord: "cyr20041009",
-        img: "Minecraft%20style%20frontier%20outpost%20in%20badlands%2C%20mesa%20plateau%2C%20rough%20wooden%20fort%2C%20dusty%20wasteland%2C%20harsh%20sun",
-        desc: "荒原尽头的前哨之城，断壁残垣中铸就新生。"
-      },
-      {
-        name: "新北自治区",
-        lord: "opzc",
-        img: "Minecraft%20style%20snowy%20taiga%20settlement%2C%20spruce%20log%20cabins%2C%20frozen%20river%2C%20northern%20lights%2C%20cozy%20smoke",
-        desc: "北境针叶林中的自治聚落，冰雪与炉火共存。"
-      },
-      {
-        name: "闽海城",
-        lord: "yueyuezia",
-        img: "Minecraft%20style%20coastal%20Chinese%20fishing%20city%2C%20terraced%20houses%2C%20fishing%20boats%2C%20sea%20breeze%2C%20morning%20mist%2C%20peaceful",
-        desc: "面朝大海的渔港之城，晨雾中千帆竞发。"
-      },
-      {
-        name: "潮汐城",
-        lord: "lucas",
-        img: "Minecraft%20style%20medieval%20coastal%20city%20at%20sunset%2C%20harbor%20with%20ships%2C%20tides%20and%20golden%20light%2C%20cinematic",
-        desc: "临海而建，潮汐涨落间见证商贸繁华的港口之城。"
-      },
-      {
-        name: "晋泉",
-        lord: "Achillesrtydy",
-        img: "Minecraft%20style%20ancient%20spring%20city%2C%20stone%20fountains%2C%20clear%20water%20channels%2C%20old%20town%20alleys%2C%20peaceful%20courtyard",
-        desc: "泉水潺潺的古城，石渠穿巷，清流绕户。"
-      },
-      {
-        name: "闽州城",
-        lord: "ZBook",
-        img: "Minecraft%20style%20walled%20Chinese%20provincial%20capital%2C%20grand%20gates%2C%20tile%20roofs%2C%20busy%20streets%2C%20bustling%20market",
-        desc: "闽地州府，城墙巍峨，市井繁华。"
-      },
-      {
-        name: "福宁城",
-        lord: "tomato",
-        img: "Minecraft%20style%20fortified%20hilltop%20town%2C%20stone%20walls%2C%20watch%20fires%2C%20valley%20below%2C%20defensive%20keep%2C%20dusk",
-        desc: "山丘上的宁静堡垒，守望山谷的据点。"
-      },
-      {
-        name: "熊孩子大联盟",
-        lord: "BVVD",
-        img: "Minecraft%20style%20chaotic%20colorful%20playground%20city%2C%20rainbow%20blocks%2C%20wild%20builds%2C%20prank%20machines%2C%20fun%20and%20messy%2C%20vibrant",
-        desc: "熊孩子们的乐园，混乱与创意并存的自由之地。"
-      },
-      {
-        name: "津岚城",
-        lord: "aKr_1437",
-        img: "Minecraft%20style%20misty%20mountain%20town%20with%20waterfalls%20and%20rivers%2C%20floating%20fog%2C%20lush%20green%20valley%2C%20serene",
-        desc: "山岚水雾环绕的水陆枢纽，渔歌与商船在此交织。"
-      },
-      {
-        name: "锡安城",
-        lord: "jingfeng553",
-        img: "Minecraft%20style%20holy%20city%20on%20mountain%2C%20white%20stone%20temples%2C%20golden%20light%20from%20heaven%2C%20sacred%20atmosphere%2C%20divine",
-        desc: "圣山之上的锡安圣城，白石神殿金光笼罩。"
-      }
+    // 城市数据：真实截图放 img/cities/城市名.png 即自动显示；无图时显示城徽占位（不使用 AI 生成图）
+    const CITIES = [
+      { name: "莆阳城", lord: "2323qw", desc: "古朴的水乡之城，木楼倒映河面，灯笼长明不熄。" },
+      { name: "永宁城", lord: "yao2233", desc: "平原上的永久要塞，高墙永守，安宁无虞。" },
+      { name: "鮀济大湾区", lord: "tychen", desc: "蛇济湾畔的繁华都市群，贸易与科技交汇之地。" },
+      { name: "琉球首里城", lord: "tpoak", desc: "海岛山丘上的琉球古王城，红瓦绿椰，碧海蓝天。" },
+      { name: "安西自由城", lord: "sun123321", desc: "大漠绿洲中的自由商贸城，八方商旅汇聚之所。" },
+      { name: "阿穆尔生命制药公司", lord: "HinzaG", desc: "以生命科学为核心的制药巨头总部，药剂与实验的生产中心。" },
+      { name: "断荒城", lord: "cyr20041009", desc: "荒原尽头的前哨之城，断壁残垣中铸就新生。" },
+      { name: "新北自治区", lord: "opzc", desc: "北境针叶林中的自治聚落，冰雪与炉火共存。" },
+      { name: "闽海城", lord: "yueyuezia", desc: "面朝大海的渔港之城，晨雾中千帆竞发。" },
+      { name: "潮汐城", lord: "lucas", desc: "临海而建，潮汐涨落间见证商贸繁华的港口之城。" },
+      { name: "晋泉", lord: "Achillesrtydy", desc: "泉水潺潺的古城，石渠穿巷，清流绕户。" },
+      { name: "闽州城", lord: "ZBook", desc: "闽地州府，城墙巍峨，市井繁华。" },
+      { name: "福宁城", lord: "tomato", desc: "山丘上的宁静堡垒，守望山谷的据点。" },
+      { name: "熊孩子大联盟", lord: "BVVD", desc: "熊孩子们的乐园，混乱与创意并存的自由之地。" },
+      { name: "津岚城", lord: "aKr_1437", desc: "山岚水雾环绕的水陆枢纽，渔歌与商船在此交织。" },
+      { name: "锡安城", lord: "jingfeng553", desc: "圣山之上的锡安圣城，白石神殿金光笼罩。" }
     ];
 
-  const IMG = "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=";
   let cityIdx = 0, cityTimer = null;
 
   function buildCities(){
@@ -302,7 +315,10 @@
     const dots = document.getElementById('cityDots');
     stage.innerHTML = CITIES.map((c,i) => `
       <div class="city-card" data-idx="${i}">
-        <img src="${IMG}${c.img}&image_size=landscape_4_3" alt="${c.name}" loading="lazy">
+        <div class="city-thumb">
+          <img src="img/cities/${encodeURIComponent(c.name)}.png" alt="${c.name}" loading="lazy" onerror="this.classList.add('off')">
+          <div class="city-fallback"><div class="mk"><span>${c.name.charAt(0)}</span></div><div class="nm">${c.name}</div></div>
+        </div>
       </div>`).join('');
     dots.innerHTML = CITIES.map((_,i)=>`<button class="city-dot${i===0?' active':''}" onclick="cityGo(${i})" aria-label="城市${i+1}"></button>`).join('');
 
@@ -345,7 +361,8 @@
     setTimeout(() => {
       panel.innerHTML = `
         <div class="city-title">${c.name}</div>
-        <div class="city-lord">城主-${c.lord}</div>`;
+        <div class="city-lord">城主-${c.lord}</div>
+        <div class="city-desc">${c.desc}</div>`;
       panel.classList.remove('fading');
     }, 180);
   }

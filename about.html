@@ -7,6 +7,38 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/ark-ui.css">
+  <style id="ark-about">
+    /* ===== 关于页 · 方舟档案风（历史/地理/政体/文化 + 人物区） ===== */
+    .ph-en{display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:16px;
+      color:var(--primary-light);font-weight:700;letter-spacing:.42em;font-size:.8rem;}
+    .hero-en-line{width:56px;height:1px;background:linear-gradient(90deg,var(--primary),transparent);}
+    .page-hero h1{letter-spacing:.02em;}
+    /* 内容分区标题：菱形标记 + 去 emoji */
+    .content-section h2{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:.08em;}
+    .content-section h2::before{
+      content:'';width:18px;height:18px;flex-shrink:0;
+      border:1px solid var(--primary-light);transform:rotate(45deg);
+      background:rgba(127,168,212,.08);
+    }
+    .content-section h2 .icon{display:none;}
+    /* 城镇列表：方舟标签组 */
+    .content-section ul{display:flex;flex-wrap:wrap;gap:8px;padding:0;margin:16px 0;list-style:none;}
+    .content-section ul li{
+      margin:0;padding:7px 15px;border:1px solid var(--border);border-radius:3px;
+      font-size:.85rem;letter-spacing:.1em;color:var(--text-2);background:var(--surface);
+    }
+    .content-section ul li.highlight{border-color:rgba(232,163,61,.55);color:var(--accent);background:rgba(232,163,61,.07);}
+    /* 人物卡片：切角 + 战术细节 */
+    .pp-card{border-radius:4px;clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);}
+    .pp-avatar-box{border-radius:6px;border-color:var(--border-hover);}
+    .pp-tag{border-radius:2px;letter-spacing:.08em;border-color:var(--border-hover);}
+    .pp-tag.hot{background:linear-gradient(135deg,#2c3d57,#1c2737);color:#dfe9f5;border:1px solid rgba(140,180,225,.35);}
+    .pp-honors h3{letter-spacing:.12em;}
+    .pp-honors li::before{background:linear-gradient(135deg,var(--primary),var(--accent));transform:rotate(45deg);}
+    .people-item.is-center{text-shadow:0 0 18px rgba(127,168,212,.5);}
+    .pp-meta span{letter-spacing:.04em;font-size:.78rem;}
+  </style>
   <link rel="icon" href="/favicon.ico" type="image/x-icon">
   <link rel="apple-touch-icon" href="/favicon.ico">
 </head>
@@ -30,6 +62,7 @@
 
 <section class="page-hero">
   <div class="container">
+    <div class="ph-en"><span class="hero-en-mark">◆</span><span>REPUBLIC&nbsp;PROFILE</span><span class="hero-en-line"></span></div>
     <span class="section-tag">关于国家</span>
     <h1>新汐斯塔共和国</h1>
   </div>
@@ -79,10 +112,10 @@
           <svg class="people-arc" viewBox="-14 0 62 640" preserveAspectRatio="none" aria-hidden="true">
             <defs>
               <linearGradient id="arcGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="#6366f1" stop-opacity="0"/>
-                <stop offset="0.18" stop-color="#6366f1" stop-opacity="0.9"/>
-                <stop offset="0.82" stop-color="#f59e0b" stop-opacity="0.9"/>
-                <stop offset="1" stop-color="#f59e0b" stop-opacity="0"/>
+                <stop offset="0" stop-color="#7fa8d4" stop-opacity="0"/>
+                <stop offset="0.18" stop-color="#7fa8d4" stop-opacity="0.9"/>
+                <stop offset="0.82" stop-color="#e8a33d" stop-opacity="0.9"/>
+                <stop offset="1" stop-color="#e8a33d" stop-opacity="0"/>
               </linearGradient>
             </defs>
             <!-- 竖向贯穿的弧线：左缘从顶部淡入，向左弯出更明显的弧度，再回到右淡出 -->

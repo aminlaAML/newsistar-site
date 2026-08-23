@@ -28,24 +28,35 @@
       background: radial-gradient(ellipse at 50% 42%, #1b1b27 0%, #0a0a0f 78%);
     }
     #glcanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
-    /* 左下角信息条 */
+    /* 左下角信息条：方舟战术面板 */
     .stage-info {
       position: fixed; left: 20px; bottom: 20px; z-index: 100;
-      color: var(--text-muted); font-size: 0.82rem; line-height: 1.7;
-      background: rgba(10, 10, 15, 0.5); backdrop-filter: blur(14px);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 12px; padding: 12px 16px;
-      pointer-events: none; min-width: 150px;
+      color: var(--text-2); font-size: 0.82rem; line-height: 1.7;
+      background: rgba(8, 11, 17, 0.66); backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(148, 163, 190, 0.18);
+      border-radius: 3px; padding: 12px 18px;
+      clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+      pointer-events: none; min-width: 170px;
+      font-family: ui-monospace, SFMono-Regular, monospace;
     }
-    .stage-info b { color: var(--text); font-weight: 700; }
-    .stage-info .prog { color: var(--primary-light); font-variant-numeric: tabular-nums; }
-    /* 模型未上线占位 */
+    .stage-info::before {
+      content: '◆'; position: absolute; top: 9px; right: 16px;
+      color: var(--accent); font-size: .58rem;
+    }
+    .stage-info b { color: var(--text); font-weight: 800; letter-spacing: .16em; font-size: .8rem; }
+    .stage-info .prog { color: var(--primary-light); font-variant-numeric: tabular-nums; letter-spacing: .06em; }
+    /* 模型未上线占位：方舟战术提示 */
     .stage-empty {
       position: fixed; inset: 0; display: none;
       flex-direction: column; align-items: center; justify-content: center;
       color: var(--text-muted); text-align: center; z-index: 90;
     }
+    .stage-empty .se-mark { font-size: 2.2rem; color: var(--primary-light); margin-bottom: 22px; text-shadow: 0 0 26px rgba(127,168,212,.55); }
+    .stage-empty .se-t { font-size: 1.06rem; color: var(--text-2); letter-spacing: .3em; font-weight: 700; }
+    .stage-empty .se-s { font-size: .82rem; color: var(--text-muted); margin-top: 12px; letter-spacing: .12em; }
   </style>
+  <link rel="stylesheet" href="assets/css/ark-ui.css">
 </head>
 <body>
 
@@ -70,9 +81,9 @@
   </div>
 
   <div class="stage-empty" id="stageEmpty">
-    <div style="font-size: 2.4rem; margin-bottom: 14px;">🏛</div>
-    <div style="font-size: 1.05rem; color: var(--text-2);">城市沙盘制作中</div>
-    <div style="font-size: 0.85rem; margin-top: 6px;">等待玩家采集数据上线</div>
+    <div class="se-mark">◆</div>
+    <div class="se-t">城市沙盘制作中</div>
+    <div class="se-s">等待玩家采集数据上线</div>
   </div>
 
   <div class="stage-info" id="stageInfo">
