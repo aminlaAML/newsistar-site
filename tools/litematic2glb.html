@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Litematic → 白模 GLB 转换器 - 新汐斯塔</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f1f5f9; color: #1e293b; min-height: 100vh; }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px 60px; }
+    h1 { font-size: 1.5rem; margin-bottom: 6px; }
+    .sub { color: #64748b; font-size: 0.9rem; margin-bottom: 24px; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 22px; margin-bottom: 18px; box-shadow: 0 2px 10px rgba(0,0,0,.04); }
+    .card h2 { font-size: 1.05rem; margin-bottom: 12px; }
+    .drop { border: 2px dashed #94a3b8; border-radius: 12px; padding: 36px 20px; text-align: center; color: #64748b; cursor: pointer; transition: .2s; }
+    .drop.on { border-color: #6366f1; background: #eef2ff; color: #4338ca; }
+    .drop .big { font-size: 1.8rem; margin-bottom: 8px; }
+    .files { margin-top: 14px; }
+    .file-row { display: flex; justify-content: space-between; padding: 8px 12px; background: #f8fafc; border-radius: 8px; margin-top: 6px; font-size: 0.88rem; }
+    .file-row .ok { color: #16a34a; }
+    .btn { display: inline-block; border: none; border-radius: 10px; padding: 10px 22px; font-size: 0.95rem; cursor: pointer; background: #6366f1; color: #fff; transition: .15s; }
+    .btn:hover { background: #4f46e5; }
+    .btn:disabled { background: #cbd5e1; cursor: not-allowed; }
+    .btn.ghost { background: #fff; color: #475569; border: 1px solid #cbd5e1; }
+    .btn.ghost:hover { border-color: #6366f1; color: #4f46e5; background: #eef2ff; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+    #status { margin-top: 12px; font-size: 0.9rem; color: #475569; min-height: 1.4em; }
+    #status.err { color: #dc2626; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
+    .stat { background: #f8fafc; border-radius: 10px; padding: 12px; text-align: center; }
+    .stat .v { font-size: 1.15rem; font-weight: 700; color: #334155; }
+    .stat .k { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
+    #previewCanvas { width: 100%; height: 420px; border-radius: 12px; background: radial-gradient(ellipse at 50% 30%, #f8fafc, #e2e8f0); touch-action: none; cursor: grab; display: block; }
+    details { background: #f8fafc; border-radius: 10px; padding: 12px 16px; margin-top: 10px; }
+    summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+    details ol, details ul { margin: 10px 0 4px 20px; font-size: 0.86rem; color: #475569; line-height: 1.8; }
+    details code { background: #e2e8f0; border-radius: 4px; padding: 1px 5px; font-size: 0.82rem; }
+    .note { font-size: 0.8rem; color: #94a3b8; margin-top: 10px; line-height: 1.7; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🏛 Litematic → 白模 GLB 转换器</h1>
+  <p class="sub">把玩家用 Litematica 采集的 <code>.litematic</code> 文件转换成 3D 城市沙盘白模，全程浏览器本地处理，文件不上传服务器。支持多文件合并。</p>
+
+  <div class="card">
+    <h2>① 选择 .litematic 文件</h2>
+    <div class="drop" id="drop">
+      <div class="big">📦</div>
+      <div>拖入 .litematic 文件，或点击选择（可多选）</div>
+    </div>
+    <input type="file" id="fileInput" multiple accept=".litematic" style="display:none">
+    <div class="files" id="fileList"></div>
+    <div class="row">
+      <button class="btn" id="btnGo" disabled>⚙️ 生成白模 GLB</button>
+      <button class="btn ghost" id="btnTest">🧪 自测（内置测试场景）</button>
+      <button class="btn ghost" id="btnClear" disabled>清空</button>
+    </div>
+    <div id="status"></div>
+    <div class="stats" id="stats" style="display:none"></div>
+    <div class="row" id="dlRow" style="display:none">
+      <a class="btn" id="btnDl" download="city-model.glb">⬇️ 下载 city-model.glb</a>
+      <span class="note" id="sizeHint"></span>
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="btnChunks" disabled>📦 分区块导出（渐进加载）</button>
+      <span class="note">每区域一个 GLB + manifest.json，供地图页涟漪式上浮加载</span>
+    </div>
+  </div>
+
+  <div class="card" id="previewCard" style="display:none">
+    <h2 style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <span>② 预览（拖拽旋转 / 滚轮缩放 / 闲置自动旋转）</span>
+      <button class="btn ghost" id="btnWire" style="padding:6px 14px;font-size:0.82rem;">🔲 线框模式</button>
+    </h2>
+    <canvas id="previewCanvas"></canvas>
+    <!-- ?mv=1 时显示：用与 map.html 相同的 model-viewer 加载生成的 GLB 文件（端到端校验） -->
+    <model-viewer id="mvCheck" style="display:none;width:100%;height:420px;border-radius:12px;background:#e8edf5;margin-top:12px" camera-controls interaction-prompt="none" alt="model-viewer 校验"></model-viewer>
+  </div>
+
+  <div class="card" id="chunkCard" style="display:none">
+    <h2>③ 区块导出结果（渐进加载沙盘）</h2>
+    <div id="chunkList"></div>
+    <div class="row">
+      <a class="btn" id="btnDlManifest" download="manifest.json">⬇️ 下载 manifest.json</a>
+      <button class="btn ghost" id="btnDlAll">⬇️ 下载全部区块 GLB</button>
+      <button class="btn ghost" id="btnPostAll">📤 POST 全部到本地服务器</button>
+    </div>
+    <div class="note">把 manifest.json 与全部 chunk_*.glb 一起放进网站 <code>models/chunks/</code> 目录即可。map.html 会从最接近中心的区块开始，相邻区块依次上浮直至铺满全图；互不相连的区域自动多点起涟。POST 需先运行 <code>tools/serve.ps1</code>（http://127.0.0.1:8931），保存后打开 <code>/map.html</code> 验证。</div>
+  </div>
+
+  <div class="card">
+    <h2>📖 玩家采集指引（转发给采城的玩家）</h2>
+    <details open>
+      <summary>Litematica 采集步骤（Fabric 客户端）</summary>
+      <ol>
+        <li>安装 <b>Fabric Loader + Fabric API + Litematica</b>（Modrinth 搜 Litematica，注意匹配游戏版本）</li>
+        <li>进服后按 <code>M</code> 打开 Litematica 菜单 → <b>Area Selection</b>（区域选择）</li>
+        <li><b>Create New Selection</b> 新建选区，创建一个 Selection Box，把整座城市框进去（Y 从地面以下几格到建筑最高点）</li>
+        <li>角点可以直接在菜单里填坐标，也可以绑定热键 <code>Add selection box corner 1/2</code> 后到现场按热键定点</li>
+        <li>注意：只有<b>加载过的区块</b>才能被保存，框选前先绕城飞一圈让区块加载</li>
+        <li>回菜单点 <b>Save Schematic</b> 保存，文件在 <code>.minecraft/schematic/</code> 目录，发给你即可</li>
+        <li>城市太大单个选区存不下时：分几块采（如东城/西城），多个文件本工具会自动合并</li>
+      </ol>
+    </details>
+    <div class="note">
+      说明：草木、花朵、旗帜、<b>告示牌、按钮、画、盆栽</b>等装饰方块会自动<b>剔除</b>（不进模型）；<b>玻璃</b>渲染为半透明白，<b>水</b>渲染为浅蓝半透明；
+      被玻璃/水遮挡的墙体、地面等实心面<b>依然渲染</b>；<b>半砖</b>按半格高度、<b>楼梯</b>按半板+朝向侧板、<b>栅栏</b>按立柱+横杆、<b>门</b>按开合薄板（保留采集时的开/关状态）、<b>活板门</b>按水平薄板（开启时翻起竖立）近似渲染（石砖等整块材料按实心处理）。
+      贴着选区边界的方块外立面完整保留。
+      转换会自动剔除建筑物内部看不见的方块，只保留外表面，所以体积可控。除整体单模型外，还支持<b>分区块导出</b>（每区域一个 GLB + manifest.json），地图页会涟漪式逐块上浮加载。
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/pako.min.js"></script>
+<script type="module" src="../assets/js/model-viewer.min.js"></script>
+<script>
+'use strict';
+
+/* ================= NBT 读取器（大端） ================= */
+class NBTReader {
+  constructor(arrayBuffer) { this.dv = new DataView(arrayBuffer); this.o = 0; this.td = new TextDecoder('utf-8'); }
+  u8()  { return this.dv.getUint8(this.o++); }
+  i8()  { return this.dv.getInt8(this.o++); }
+  u16() { const v = this.dv.getUint16(this.o); this.o += 2; return v; }
+  i16() { const v = this.dv.getInt16(this.o); this.o += 2; return v; }
+  i32() { const v = this.dv.getInt32(this.o); this.o += 4; return v; }
+  i64() { const hi = this.dv.getInt32(this.o), lo = this.dv.getUint32(this.o + 4); this.o += 8; return { hi, lo }; }
+  f32() { const v = this.dv.getFloat32(this.o); this.o += 4; return v; }
+  f64() { const v = this.dv.getFloat64(this.o); this.o += 8; return v; }
+  str() {
+    const len = this.u16();
+    const s = this.td.decode(new Uint8Array(this.dv.buffer, this.dv.byteOffset + this.o, len));
+    this.o += len; return s;
+  }
+  payload(t) {
+    switch (t) {
+      case 1: return this.i8();
+      case 2: return this.i16();
+      case 3: return this.i32();
+      case 4: return this.i64();
+      case 5: return this.f32();
+      case 6: return this.f64();
+      case 7: { const n = this.i32(); const a = new Int8Array(this.dv.buffer, this.dv.byteOffset + this.o, n); this.o += n; return a; }
+      case 8: return this.str();
+      case 9: {
+        const et = this.u8(); const n = this.i32(); const arr = [];
+        if (et === 0) return arr;
+        for (let i = 0; i < n; i++) arr.push(this.payload(et));
+        return arr;
+      }
+      case 10: {
+        const obj = {};
+        for (;;) {
+          const tt = this.u8();
+          if (tt === 0) break;
+          const name = this.str();
+          obj[name] = this.payload(tt);
+        }
+        return obj;
+      }
+      case 11: { const n = this.i32(); const a = new Int32Array(n); for (let i = 0; i < n; i++) a[i] = this.dv.getInt32(this.o + i * 4); this.o += n * 4; return a; }
+      case 12: {
+        const n = this.i32();
+        const hi = new Uint32Array(n), lo = new Uint32Array(n);
+        for (let i = 0; i < n; i++) { hi[i] = this.dv.getUint32(this.o); lo[i] = this.dv.getUint32(this.o + 4); this.o += 8; }
+        return { hi, lo, count: n };
+      }
+      default: throw new Error('未知 NBT 标签类型: ' + t);
+    }
+  }
+  readRoot() {
+    const t = this.u8();
+    if (t !== 10) throw new Error('根标签不是 Compound');
+    this.str(); // 根名字（通常为空）
+    return this.payload(10);
+  }
+}
+
+/* ============ 从 64 位 long（hi/lo）中按位提取 entry ============ */
+function bitsNeeded(paletteSize) { return Math.max(2, Math.ceil(Math.log2(paletteSize))); }
+
+/* ================= 方块分类 =================
+   返回类型：0=空气 1=实心(白) 2=玻璃(透明) 3=水(浅蓝)
+   4=半砖 5=楼梯 6=栅栏 7=门（非整块几何，近似盒体渲染） 9=草木旗帜告示牌等装饰(剔除) */
+function classifyBlock(name) {
+  let base = String(name || '');
+  if (base.startsWith('minecraft:')) base = base.slice(10);
+  if (base === 'air' || base === 'cave_air' || base === 'void_air') return 0;
+  // 玻璃
+  if (base === 'glass' || base === 'tinted_glass' || base === 'glass_pane'
+    || base.endsWith('_stained_glass') || base.endsWith('_stained_glass_pane')) return 2;
+  // 水
+  if (base === 'water' || base === 'flowing_water' || base === 'bubble_column') return 3;
+  // 半砖 / 楼梯 / 栅栏（含栅栏门）/ 门：非整块几何（石砖等 *_bricks 是整块，走默认实心）
+  if (base.endsWith('_slab')) return 4;
+  if (base.endsWith('_stairs')) return 5;
+  if (base.endsWith('_fence') || base.endsWith('_fence_gate')) return 6;
+  if (base.endsWith('_door') || base === 'trapdoor' || base.endsWith('_trapdoor')) return 7;
+  // 草木 / 旗帜等装饰 → 剔除
+  if (base === 'grass' || base === 'short_grass' || base === 'tall_grass'
+    || base === 'fern' || base === 'large_fern' || base === 'dead_bush'
+    || base === 'seagrass' || base === 'tall_seagrass'
+    || base === 'kelp' || base === 'kelp_plant' || base === 'sugar_cane'
+    || base === 'bamboo' || base === 'bamboo_sapling'
+    || base === 'brown_mushroom' || base === 'red_mushroom'
+    || base === 'vine' || base === 'glow_lichen' || base === 'lily_pad'
+    || base === 'wheat' || base === 'carrots' || base === 'potatoes' || base === 'beetroots'
+    || base === 'nether_wart' || base === 'cocoa' || base === 'sweet_berry_bush'
+    || base === 'dandelion' || base === 'poppy' || base === 'blue_orchid' || base === 'allium'
+    || base === 'azure_bluet' || base === 'oxeye_daisy' || base === 'cornflower'
+    || base === 'lily_of_the_valley' || base === 'wither_rose' || base === 'torchflower'
+    || base === 'pink_petals' || base === 'wildflowers'
+    || base === 'torch' || base === 'wall_torch' || base === 'soul_torch' || base === 'soul_wall_torch'
+    || base === 'redstone_torch' || base === 'redstone_wall_torch'
+    || base === 'rail' || base === 'powered_rail' || base === 'detector_rail' || base === 'activator_rail'
+    // 告示牌 / 按钮 / 画 / 盆栽（花盆及其内容物）
+    || base.endsWith('_sign') || base.endsWith('_wall_sign') || base.endsWith('_hanging_sign') || base.endsWith('_wall_hanging_sign')
+    || base.endsWith('_button') || base === 'button'
+    || base === 'painting' || base === 'item_frame' || base === 'glow_item_frame'
+    || base === 'flower_pot' || base.endsWith('_potted') || base === 'potted_'
+    || base.endsWith('_sapling') || base.endsWith('_banner') || base.endsWith('_tulip')
+    || base.includes('_vines')) return 9;
+  // grass_block（草方块）是实心地表，保留
+  return 1;
+}
+
+/* ================= litematic 解析 ================= */
+function parseLitematic(ab, fileName) {
+  let nbtRoot;
+  try {
+    const input = ab instanceof Uint8Array ? ab : new Uint8Array(ab);
+    // .litematic 官方为 gzip 压缩；依次尝试 gzip / zlib / raw，兼容各类工具产物
+    let inflated = null;
+    for (const fn of [d => pako.ungzip(d), d => pako.inflate(d), d => pako.inflateRaw(d)]) {
+      try { const out = fn(input); if (out && out.length) { inflated = out; break; } } catch (e) { /* 换下一种 */ }
+    }
+    if (!inflated) throw new Error('解压失败（gzip/zlib/raw 均无法解开）');
+    const bytes = new Uint8Array(inflated);  // 精确复制，保证 buffer 长度与数据一致
+    nbtRoot = new NBTReader(bytes.buffer).readRoot();
+    if (!nbtRoot) throw new Error('空 NBT');
+  } catch (e) {
+    throw new Error(fileName + ': 不是有效的 .litematic 文件（' + (e && e.message ? e.message : '解压/解析失败') + '）');
+  }
+  const regionsNBT = nbtRoot.Regions;
+  if (!regionsNBT) throw new Error(fileName + ': 缺少 Regions 字段');
+  const dataVersion = nbtRoot.MinecraftDataVersion || 0;
+  // 坐标兼容读取：IntList / IntArray / Compound{x,y,z} 三种形态都接受
+  function readCoord(v) {
+    if (Array.isArray(v) && v.length === 3) return v;                                  // List<Int>
+    if (v && v.constructor && v.constructor.name === 'Int32Array' && v.length === 3) return Array.from(v);  // IntArray
+    if (v && typeof v === 'object' && v.x !== undefined && v.y !== undefined && v.z !== undefined) return [v.x, v.y, v.z];  // Compound
+    return null;
+  }
+  const regions = [];
+  for (const key of Object.keys(regionsNBT)) {
+    const r = regionsNBT[key];
+    const pos = readCoord(r.Position), size = readCoord(r.Size);
+    if (!pos || !size) {
+      const shape = v => v == null ? '无' : (Array.isArray(v) ? 'List[' + v.length + ']'
+        : (v && v.constructor && v.constructor.name === 'Int32Array') ? 'IntArr[' + v.length + ']'
+        : (typeof v === 'object' ? 'Obj{' + Object.keys(v).slice(0, 6).join(',') + '}' : typeof v));
+      throw new Error(fileName + ': region「' + key + '」Position/Size 形态异常（Position=' + shape(r.Position) + ', Size=' + shape(r.Size) + '）');
+    }
+    const sx = Math.abs(size[0]), sy = Math.abs(size[1]), sz = Math.abs(size[2]);
+    const volume = sx * sy * sz;
+    const palette = (r.BlockStatePalette || []).map(p => (p.Name || '') + '');
+    const paletteKind = palette.map(classifyBlock);  // 0空 1实 2玻 3水 4半砖 5楼梯 6栅栏 7门/活板门 9装饰剔除
+    const paletteTrap = palette.map(n => /trapdoor/i.test(n));  // 活板门（水平板）与门（竖板）几何不同
+    const paletteProps = (r.BlockStatePalette || []).map(p => (p && p.Properties) || {});  // 半砖half/楼梯facing等
+    if (palette.length === 0) { regions.push({ px: pos[0], py: pos[1], pz: pos[2], sx, sy, sz, volume, empty: true }); continue; }
+    const states = r.BlockStates;
+    if (!states || !states.hi) throw new Error(fileName + ': region 缺少 BlockStates');
+    regions.push({
+      px: pos[0], py: pos[1], pz: pos[2], sx, sy, sz, volume,
+      paletteSize: palette.length, paletteKind, paletteTrap, paletteProps, states, dataVersion,
+    });
+  }
+  return { name: fileName, regions, totalBlocks: (nbtRoot.Metadata && nbtRoot.Metadata.TotalBlocks) || 0 };
+}
+
+/* 解包一个 region 的方块到全局体素网格（vox 为 Uint8Array，1=实心）
+   litematic 内部索引顺序：x 最快、y 最慢（index = (y*sz + z)*sx + x）
+   打包格式以 LongArray 实际长度自动探测（不信任 DataVersion，实测 2026 现行
+   .litematic 仍写旧"连续位流"格式，尽管 DataVersion 是新版）：
+   - 连续位流（旧）：entry idx 起始于全局位 idx*bits，entry 可跨 long 边界
+   - 每 long 独立（新/1.16+区块式）：每个 long 装 floor(64/bits) 个，不跨界 */
+function unpackRegion(reg, vox, gd, gmin, extras) {
+  let skippedPlants = 0;  // 被剔除的草木/旗帜方块数（档案比对用）
+  if (reg.empty || reg.paletteSize === 0) return skippedPlants;
+  const nLong = reg.states.count;
+  const hi = reg.states.hi, lo = reg.states.lo;
+  const kinds = reg.paletteKind;
+  const sx = reg.sx, sy = reg.sy, sz = reg.sz;
+  const volume = sx * sy * sz;
+
+  // —— 格式探测：候选 bits × 两种格式，取理论 long 数与实际最接近者 ——
+  const raw = Math.max(1, Math.ceil(Math.log2(reg.paletteSize)));
+  const candBits = [];
+  for (const b of [raw, Math.max(2, raw), Math.max(4, raw)]) if (!candBits.includes(b)) candBits.push(b);
+  let legacy = true, useBits = candBits[0], bestDist = Infinity;
+  for (const b of candBits) {
+    const epl = Math.floor(64 / b);
+    const expOld = Math.ceil(volume * b / 64);                       // 连续位流理论 long 数
+    const expNew = epl > 0 ? Math.ceil(volume / epl) : Infinity;     // 每 long 独立理论 long 数
+    if (Math.abs(nLong - expOld) < bestDist) { bestDist = Math.abs(nLong - expOld); legacy = true; useBits = b; }
+    if (Math.abs(nLong - expNew) < bestDist) { bestDist = Math.abs(nLong - expNew); legacy = false; useBits = b; }
+  }
+  reg.detected = (legacy ? '连续位流' : '每long独立') + '·' + useBits + 'bit';
+
+  const epl = Math.floor(64 / useBits);
+  let idx = 0;
+  for (let y = 0; y < sy; y++) {
+    for (let z = 0; z < sz; z++) {
+      for (let x = 0; x < sx; x++, idx++) {
+        let entry;
+        if (reg.paletteSize === 1) {
+          entry = 0;
+        } else if (legacy) {
+          const startBit = idx * useBits;
+          const longIdx = Math.floor(startBit / 64);
+          const bitOff = startBit % 64;
+          if (longIdx >= nLong) continue;
+          const hasNext = longIdx + 1 < nLong;
+          entry = readBits64(hi[longIdx], lo[longIdx], bitOff, useBits,
+            hasNext ? hi[longIdx + 1] : 0, hasNext ? lo[longIdx + 1] : 0);
+        } else {
+          const longIdx = Math.floor(idx / epl);
+          const bitOff = (idx % epl) * useBits;
+          if (longIdx >= nLong) continue;
+          entry = readBits64(hi[longIdx], lo[longIdx], bitOff, useBits, 0, 0);
+        }
+        if (entry < 0 || entry >= reg.paletteSize) continue; // 越界索引按空气处理
+        const k = kinds[entry];
+        if (k === 0 || k === 9) { if (k === 9) skippedPlants++; continue; }
+        const gx = reg.px + x - gmin[0], gy = reg.py + y - gmin[1], gz = reg.pz + z - gmin[2];
+        if (gx < 0 || gy < 0 || gz < 0 || gx >= gd[0] || gy >= gd[1] || gz >= gd[2]) continue;
+        if (k === 4 || k === 5 || k === 6 || k === 7) {
+          // 非整块（半砖/楼梯/栅栏/门）：不占体素格（邻居按空气生成完整面，无遮挡无 z-fight），
+          // 单独记录到 extras 由盒体几何近似渲染
+          const props = (reg.paletteProps && reg.paletteProps[entry]) || {};
+          extras.push({ x: gx, y: gy, z: gz, kind: k, trap: !!(reg.paletteTrap && reg.paletteTrap[entry]),
+            half: props.half || 'bottom', facing: props.facing || 'north', open: props.open === 'true' });
+          continue;
+        }
+        vox[(gy * gd[2] + gz) * gd[0] + gx] = k;
+      }
+    }
+  }
+  return skippedPlants;
+}
+// 从 64 位 long（hi/lo 两半，位 0 = lo 最低位）的 bitOff 位起读 n 位
+// 同一 long 内可跨 lo/hi 分界；bitOff+n 超过 64 时高位取自下一个 long（nextHi/nextLo）
+function readBits64(hi, lo, bitOff, n, nextHi, nextLo) {
+  if (bitOff + n <= 64) {
+    if (bitOff + n <= 32) return (lo >>> bitOff) & (-1 >>> (32 - n));
+    if (bitOff >= 32) return (hi >>> (bitOff - 32)) & (-1 >>> (32 - n));
+    // 跨 lo/hi 分界：低位段（lo 高位）+ 高位段（hi 低位）拼接
+    const lp = 32 - bitOff;
+    const v1 = (lo >>> bitOff) & (-1 >>> (32 - lp));
+    const v2 = (hi & (-1 >>> (32 - (n - lp)))) << lp;
+    return v1 | v2;
+  }
+  // 跨 long 边界：低位来自当前 long 尾部，高位来自下一个 long 头部
+  const fromCur = 64 - bitOff;
+  const cur = readBits64(hi, lo, bitOff, fromCur, 0, 0);
+  const nxt = readBits64(nextHi, nextLo, 0, n - fromCur, 0, 0);
+  return cur | (nxt << fromCur);
+}
+
+/* ================= 贪心网格（按材质分组：1=实心白 2=玻璃透明 3=水浅蓝） =================
+   可见性规则：面在"邻居为空气，或邻居为另一种透明材质"时生成——
+   被玻璃/水遮挡的实心面会渲染（透过半透明材质可见）；
+   实心-实心、玻璃-玻璃、水-水之间不生成面。
+   边界：扫描从 p[axis]=-1 起（安全 get 越界=空气），区域 min 侧贴边方块的外立面正常生成 */
+function greedyMesh(vox, dims, extras) {
+  const [dx, dy, dz] = dims;
+  extras = extras || [];
+  const groups = { 1: { quads: [] }, 2: { quads: [] }, 3: { quads: [] } };
+  const get = (x, y, z) => (x < 0 || y < 0 || z < 0 || x >= dx || y >= dy || z >= dz) ? 0 : vox[(y * dz + z) * dx + x];
+  const mask = new Int8Array(Math.max(dx * dy, dy * dz, dx * dz));
+  const visible = (n, t) => n === 0 || ((n === 2 || n === 3) && n !== t);
+  for (const T of [1, 2, 3]) {
+    for (let axis = 0; axis < 3; axis++) {
+      const u = (axis + 1) % 3, v = (axis + 2) % 3;
+      const du = [0, 0, 0], dv = [0, 0, 0];
+      du[u] = 1; dv[v] = 1;
+      const adim = [dx, dy, dz][axis], udim = [dx, dy, dz][u], vdim = [dx, dy, dz][v];
+      const p = [0, 0, 0];
+      for (p[axis] = -1; p[axis] < adim; p[axis]++) {   // -1 起：覆盖区域 min 边界面
+        // mask：本类型 T 在 p[axis] 与 p[axis]+1 之间需生成的面（±T）
+        let n = 0;
+        for (p[v] = 0; p[v] < vdim; p[v]++) {
+          for (p[u] = 0; p[u] < udim; p[u]++, n++) {
+            const a = get(p[0], p[1], p[2]);
+            const nb = [p[0], p[1], p[2]]; nb[axis] += 1;
+            const b = get(nb[0], nb[1], nb[2]);
+            if (a === T && visible(b, T)) mask[n] = T;       // T 的面朝 +axis
+            else if (b === T && visible(a, T)) mask[n] = -T; // T 的面朝 -axis
+            else mask[n] = 0;
+          }
+        }
+        // 贪心合并（相等 mask 值 = 同类型同朝向）
+        n = 0;
+        for (let j = 0; j < vdim; j++) {
+          for (let i = 0; i < udim;) {
+            const c = mask[n];
+            if (c === 0) { i++; n++; continue; }
+            let w = 1;
+            while (i + w < udim && mask[n + w] === c) w++;
+            let h = 1;
+            outer: while (j + h < vdim) {
+              for (let k = 0; k < w; k++) if (mask[n + k + h * udim] !== c) break outer;
+              h++;
+            }
+            for (let l = 0; l < h; l++) for (let k = 0; k < w; k++) mask[n + k + l * udim] = 0;
+            // 面位于体素 p[axis] 与 p[axis]+1 的边界平面上；u-v 平面内锚定到掩码位置 (i, j)
+            const base = [0, 0, 0];
+            base[axis] = p[axis] + 1;
+            base[u] = i;
+            base[v] = j;
+            groups[T].quads.push({ base: base.slice(), du: du.slice(), dv: dv.slice(), w, h, axis, sign: c > 0 ? 1 : -1, type: T });
+            i += w; n += w;
+          }
+        }
+      }
+    }
+  }
+  // ---- 非整块几何（半砖/楼梯/栅栏）：轴对齐盒体近似，归入实心白组 ----
+  const EPS = 0.0015;  // 微缩避让：与整块面保持间隙，杜绝共面 z-fight
+  function pushQuad(axis, sign, base, w, h) {
+    const u = (axis + 1) % 3, v = (axis + 2) % 3;
+    const du = [0, 0, 0]; du[u] = 1;
+    const dv = [0, 0, 0]; dv[v] = 1;
+    groups[1].quads.push({ base: base.slice(), du, dv, w, h, axis, sign, type: 1 });
+  }
+  function addBox(x0, y0, z0, x1, y1, z1) {
+    x0 += EPS; y0 += EPS; z0 += EPS; x1 -= EPS; y1 -= EPS; z1 -= EPS;
+    if (x1 - x0 < 1e-6 || y1 - y0 < 1e-6 || z1 - z0 < 1e-6) return;
+    pushQuad(0, +1, [x1, y0, z0], y1 - y0, z1 - z0);   // +X
+    pushQuad(0, -1, [x0, y0, z0], y1 - y0, z1 - z0);   // -X
+    pushQuad(1, +1, [x0, y1, z0], z1 - z0, x1 - x0);   // +Y
+    pushQuad(1, -1, [x0, y0, z0], z1 - z0, x1 - x0);   // -Y
+    pushQuad(2, +1, [x0, y0, z1], x1 - x0, y1 - y0);   // +Z
+    pushQuad(2, -1, [x0, y0, z0], x1 - x0, y1 - y0);   // -Z
+  }
+  const extraCells = new Set(extras.map(e => e.x + ',' + e.y + ',' + e.z));
+  const nonAir = (x, y, z) => get(x, y, z) !== 0 || extraCells.has(x + ',' + y + ',' + z);
+  const seenDoorHalf = new Set();  // 门的上下半去重（同 x,z,朝向,开合 只出一块整板）
+  for (const e of extras) {
+    const { x, y, z, kind } = e;
+    if (kind === 4) {           // 半砖：上半 or 下半
+      const y0 = e.half === 'top' ? y + 0.5 : y;
+      addBox(x, y0, z, x + 1, y0 + 0.5, z + 1);
+    } else if (kind === 5) {    // 楼梯：整幅半板 + 朝向侧另半板（忽略内外转角 shape）
+      const xz = e.facing === 'north' ? [x, x + 1, z, z + 0.5]
+        : e.facing === 'south' ? [x, x + 1, z + 0.5, z + 1]
+        : e.facing === 'west' ? [x, x + 0.5, z, z + 1]
+        : [x + 0.5, x + 1, z, z + 1];
+      if (e.half === 'top') {
+        addBox(x, y + 0.5, z, x + 1, y + 1, z + 1);
+        addBox(xz[0], y, xz[2], xz[1], y + 0.5, xz[3]);
+      } else {
+        addBox(x, y, z, x + 1, y + 0.5, z + 1);
+        addBox(xz[0], y + 0.5, xz[2], xz[1], y + 1, xz[3]);
+      }
+    } else if (kind === 6) {    // 栅栏：中柱 + 邻接非空气方向的横杆（两道）
+      addBox(x + 0.375, y, z + 0.375, x + 0.625, y + 1, z + 0.625);
+      const rails = [[y + 0.375, y + 0.5625], [y + 0.6875, y + 0.875]];
+      if (nonAir(x + 1, y, z)) for (const r of rails) addBox(x + 0.625, r[0], z + 0.4375, x + 1, r[1], z + 0.5625);
+      if (nonAir(x - 1, y, z)) for (const r of rails) addBox(x, r[0], z + 0.4375, x + 0.375, r[1], z + 0.5625);
+      if (nonAir(x, y, z + 1)) for (const r of rails) addBox(x + 0.4375, r[0], z + 0.625, x + 0.5625, r[1], z + 1);
+      if (nonAir(x, y, z - 1)) for (const r of rails) addBox(x + 0.4375, r[0], z, x + 0.5625, r[1], z + 0.375);
+    } else if (kind === 7 && e.trap) {
+      // 活板门：水平薄板（3/16 厚）。
+      // 关闭：平铺在 half 侧（bottom=格底 / top=格顶）；开启：绕 facing 边翻起竖立
+      const TH = 0.1875;
+      if (!e.open) {
+        if (e.half === 'top') addBox(x, y + 1 - TH, z, x + 1, y + 1, z + 1);
+        else addBox(x, y, z, x + 1, y + TH, z + 1);
+      } else {
+        // 开启：贴 facing 边竖立（全高薄板）
+        if (e.facing === 'north') addBox(x, y, z, x + 1, y + 1, z + TH);
+        else if (e.facing === 'south') addBox(x, y, z + 1 - TH, x + 1, y + 1, z + 1);
+        else if (e.facing === 'west') addBox(x, y, z, x + TH, y + 1, z + 1);
+        else addBox(x + 1 - TH, y, z, x + 1, y + 1, z + 1);
+      }
+    } else if (kind === 7 && !seenDoorHalf.has(x + ',' + z + ',' + e.facing + ',' + e.open)) {
+      // 门：竖薄板；关闭=贴 facing 反侧，开启=旋 90°（厚度 3/16）。
+      // 门由上下两个 half 方块组成——同位置同朝向只生成一次整板（活板门是独立整格，不参与去重）
+      seenDoorHalf.add(x + ',' + z + ',' + e.facing + ',' + e.open);
+      const TH = 0.1875;
+      if (!e.open) {
+        // 关闭：贴 facing 反侧（facing=门开的方向，门板贴其对面）
+        if (e.facing === 'north') addBox(x, y, z + 1 - TH, x + 1, y + 1, z + 1);
+        else if (e.facing === 'south') addBox(x, y, z, x + 1, y + 1, z + TH);
+        else if (e.facing === 'west') addBox(x + 1 - TH, y, z, x + 1, y + 1, z + 1);
+        else addBox(x, y, z, x + TH, y + 1, z + 1);
+      } else {
+        // 开启：旋到铰链侧（近似：旋向 facing 左手边）
+        if (e.facing === 'north') addBox(x, y, z, x + TH, y + 1, z + 1);
+        else if (e.facing === 'south') addBox(x + 1 - TH, y, z, x + 1, y + 1, z + 1);
+        else if (e.facing === 'west') addBox(x, y, z + 1 - TH, x + 1, y + 1, z + 1);
+        else addBox(x, y, z, x + 1, y + 1, z + TH);
+      }
+    }
+  }
+  // 各组展开成顶点/索引
+  let totalQuads = 0;
+  for (const t of [1, 2, 3]) {
+    const quads = groups[t].quads;
+    const nq = quads.length;
+    totalQuads += nq;
+    const pos = new Float32Array(nq * 12);
+    const nor = new Float32Array(nq * 12);
+    const idx = new Uint32Array(nq * 6);
+    for (let q = 0; q < nq; q++) {
+      const { base, du, dv, w, h, axis, sign } = quads[q];
+      const p0 = [base[0], base[1], base[2]];
+      const p1 = [base[0] + du[0] * w, base[1] + du[1] * w, base[2] + du[2] * w];
+      const p2 = [base[0] + (du[0] * w + dv[0] * h), base[1] + (du[1] * w + dv[1] * h), base[2] + (du[2] * w + dv[2] * h)];
+      const p3 = [base[0] + dv[0] * h, base[1] + dv[1] * h, base[2] + dv[2] * h];
+      const nrm = [0, 0, 0]; nrm[axis] = sign;
+      pos.set(p0, q * 12); pos.set(p1, q * 12 + 3); pos.set(p2, q * 12 + 6); pos.set(p3, q * 12 + 9);
+      for (let k = 0; k < 4; k++) nor.set(nrm, q * 12 + k * 3);
+      const o = q * 4;
+      // 绕序：sign<0 面翻转索引，保证 CCW 为正面（背面剔除查看器兼容）
+      if (sign > 0) idx.set([o, o + 1, o + 2, o, o + 2, o + 3], q * 6);
+      else idx.set([o, o + 2, o + 1, o, o + 3, o + 2], q * 6);
+    }
+    groups[t].pos = pos; groups[t].nor = nor; groups[t].idx = idx; groups[t].quadCount = nq;
+  }
+  return { groups, quadCount: totalQuads, quads: groups[1].quads.concat(groups[2].quads, groups[3].quads) };
+}
+
+/* ================= GLB 编码（多材质：实心白 / 玻璃透明 / 水浅蓝） ================= */
+function buildGLB(mesh) {
+  const pad4 = n => (4 - (n % 4)) % 4;
+  // 材质表：0=实心 1=玻璃 2=水（type-1 索引）
+  const materials = [
+    { pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 0.85 }, doubleSided: true },
+    { pbrMetallicRoughness: { baseColorFactor: [0.94, 0.97, 1, 0.30], metallicFactor: 0, roughnessFactor: 0.05 }, alphaMode: 'BLEND', doubleSided: true },
+    { pbrMetallicRoughness: { baseColorFactor: [0.38, 0.68, 0.96, 0.75], metallicFactor: 0, roughnessFactor: 0.15 }, alphaMode: 'BLEND', doubleSided: true },
+  ];
+  const bufferViews = [], accessors = [], meshes = [], nodes = [];
+  const binParts = [];  // [{arr, len, pad}]
+  let offset = 0, accIdx = 0;
+  for (const t of [1, 2, 3]) {
+    const g = mesh.groups[t];
+    if (!g || g.quadCount === 0) continue;
+    const posLen = g.pos.byteLength, norLen = g.nor.byteLength, idxLen = g.idx.byteLength;
+    const posPad = pad4(posLen), norPad = pad4(norLen), idxPad = pad4(idxLen);
+    // POSITION min/max（规范要求）
+    const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < g.pos.length; i += 3) for (let k = 0; k < 3; k++) {
+      if (g.pos[i + k] < mn[k]) mn[k] = g.pos[i + k];
+      if (g.pos[i + k] > mx[k]) mx[k] = g.pos[i + k];
+    }
+    bufferViews.push({ buffer: 0, byteOffset: offset, byteLength: posLen, target: 34962 });
+    bufferViews.push({ buffer: 0, byteOffset: offset + posLen + posPad, byteLength: norLen, target: 34962 });
+    bufferViews.push({ buffer: 0, byteOffset: offset + posLen + posPad + norLen + norPad, byteLength: idxLen, target: 34963 });
+    accessors.push({ bufferView: accIdx * 3, componentType: 5126, count: g.pos.length / 3, type: 'VEC3', min: mn, max: mx });
+    accessors.push({ bufferView: accIdx * 3 + 1, componentType: 5126, count: g.nor.length / 3, type: 'VEC3' });
+    accessors.push({ bufferView: accIdx * 3 + 2, componentType: 5125, count: g.idx.length, type: 'SCALAR' });
+    meshes.push({ primitives: [{ attributes: { POSITION: accIdx * 3, NORMAL: accIdx * 3 + 1 }, indices: accIdx * 3 + 2, material: t - 1, mode: 4 }] });
+    nodes.push({ mesh: accIdx });
+    binParts.push({ arr: g.pos, len: posLen, pad: posPad }, { arr: g.nor, len: norLen, pad: norPad }, { arr: g.idx, len: idxLen, pad: idxPad });
+    offset += posLen + posPad + norLen + norPad + idxLen + idxPad;
+    accIdx++;
+  }
+  const binLen = offset;
+  const gltf = {
+    asset: { version: '2.0', generator: 'newsistar litematic2glb' },
+    scene: 0,
+    scenes: [{ nodes: nodes.map((_, i) => i) }],
+    nodes,
+    meshes,
+    materials,
+    buffers: [{ byteLength: binLen }],
+    bufferViews,
+    accessors,
+  };
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(gltf));
+  const jsonPad = pad4(jsonBytes.length);
+  const jsonChunkLen = jsonBytes.length + jsonPad;
+  const total = 12 + 8 + jsonChunkLen + 8 + binLen;
+  const buf = new ArrayBuffer(total);
+  const dv = new DataView(buf);
+  const u8 = new Uint8Array(buf);
+  let o = 0;
+  dv.setUint32(o, 0x46546C67, true); o += 4;      // magic "glTF"
+  dv.setUint32(o, 2, true); o += 4;               // version
+  dv.setUint32(o, total, true); o += 4;           // total length
+  dv.setUint32(o, jsonChunkLen, true); o += 4;
+  dv.setUint32(o, 0x4E4F534A, true); o += 4;      // "JSON"
+  u8.set(jsonBytes, o); o += jsonBytes.length;
+  for (let i = 0; i < jsonPad; i++) u8[o++] = 0x20; // 空格填充
+  dv.setUint32(o, binLen, true); o += 4;
+  dv.setUint32(o, 0x004E4942, true); o += 4;      // "BIN\0"
+  for (const part of binParts) {
+    u8.set(new Uint8Array(part.arr.buffer, part.arr.byteOffset, part.len), o); o += part.len;
+    for (let i = 0; i < part.pad; i++) u8[o++] = 0;
+  }
+  return buf;
+}
+
+/* ================= WebGL 3D 预览（零依赖内联实现，file:// 双击打开也能跑） ================= */
+function createGLPreview(canvas) {
+  const gl = canvas.getContext('webgl2', { antialias: true, preserveDrawingBuffer: true }) || (() => {
+    const g = canvas.getContext('webgl', { antialias: true, preserveDrawingBuffer: true });
+    if (g) g.getExtension('OES_element_index_uint');  // WebGL1 需要32位索引扩展
+    return g;
+  })();
+  if (!gl) return null;
+
+  const VS = 'attribute vec3 aPos; attribute vec3 aNor; uniform mat4 uMVP; varying vec3 vNor; varying float vY;' +
+    'void main(){ gl_Position = uMVP * vec4(aPos,1.0); vNor = aNor; vY = aPos.y; }';
+  // uMode：0=实体，1=线框深色；uGrad：1=实心组用高度渐变白，0=组纯色（玻璃/水）
+  const FS = 'precision mediump float; varying vec3 vNor; varying float vY;' +
+    'uniform float uMode, uYMax, uAlpha, uGrad; uniform vec3 uColor;' +
+    'void main(){ if(uMode > 0.5){ gl_FragColor = vec4(0.22,0.30,0.48,1.0); return; }' +
+    'vec3 N = normalize(vNor); if(!gl_FrontFacing) N = -N;' +
+    'float d1 = max(dot(N, normalize(vec3(0.4,0.8,0.55))), 0.0);' +
+    'float d2 = max(dot(N, normalize(vec3(-0.55,0.15,-0.6))), 0.0);' +
+    'float t = clamp(vY / max(uYMax, 1.0), 0.0, 1.0);' +
+    'vec3 grad = mix(vec3(0.88,0.92,0.98), vec3(1.0,1.0,1.0), t);' +
+    'vec3 base = mix(uColor, grad, uGrad);' +
+    'vec3 col = base * (0.52 + 0.44*d1 + 0.18*d2);' +
+    'gl_FragColor = vec4(col, uAlpha); }';
+  function sh(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return null;
+  gl.useProgram(prog);
+
+  const aPos = gl.getAttribLocation(prog, 'aPos');
+  const aNor = gl.getAttribLocation(prog, 'aNor');
+  const uMVP = gl.getUniformLocation(prog, 'uMVP');
+  const uMode = gl.getUniformLocation(prog, 'uMode');
+  const uYMax = gl.getUniformLocation(prog, 'uYMax');
+  const uAlpha = gl.getUniformLocation(prog, 'uAlpha');
+  const uGrad = gl.getUniformLocation(prog, 'uGrad');
+  const uColor = gl.getUniformLocation(prog, 'uColor');
+  // 各类型渲染参数：颜色 / 透明度 / 是否用高度渐变
+  const TYPE_STYLE = {
+    1: { color: [1.0, 1.0, 1.0], alpha: 1.0, grad: 1 },
+    2: { color: [0.94, 0.97, 1.0], alpha: 0.30, grad: 0 },
+    3: { color: [0.46, 0.74, 0.98], alpha: 0.75, grad: 0 },
+  };
+  let renderGroups = [];  // [{posBuf,norBuf,idxBuf,lineBuf,idxCount,lineCount,type}]
+  let yMax = 1, wire = false;
+  let yaw = 0.8, pitch = 0.45, dist = 10, target = [0, 0, 0], radius = 1;
+  gl.enable(gl.DEPTH_TEST);
+  gl.disable(gl.CULL_FACE);
+
+  // ---- 列主序 mat4 工具 ----
+  function perspective(fovy, aspect, near, far) {
+    const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+    const m = new Float32Array(16);
+    m[0] = f / aspect; m[5] = f; m[10] = (far + near) * nf; m[11] = -1; m[14] = 2 * far * near * nf;
+    return m;
+  }
+  function lookAt(e, c, up) {
+    let zx = e[0]-c[0], zy = e[1]-c[1], zz = e[2]-c[2];
+    const zl = Math.hypot(zx, zy, zz) || 1; zx/=zl; zy/=zl; zz/=zl;
+    let xx = up[1]*zz - up[2]*zy, xy = up[2]*zx - up[0]*zz, xz = up[0]*zy - up[1]*zx;
+    const xl = Math.hypot(xx, xy, xz) || 1; xx/=xl; xy/=xl; xz/=xl;
+    const yx = zy*xz - zz*xy, yy = zz*xx - zx*xz, yz = zx*xy - zy*xx;
+    return new Float32Array([
+      xx, yx, zx, 0,  xy, yy, zy, 0,  xz, yz, zz, 0,
+      -(xx*e[0]+xy*e[1]+xz*e[2]), -(yx*e[0]+yy*e[1]+yz*e[2]), -(zx*e[0]+zy*e[1]+zz*e[2]), 1
+    ]);
+  }
+  function mul(a, b) {
+    const o = new Float32Array(16);
+    for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++)
+      o[c*4+r] = a[r]*b[c*4] + a[4+r]*b[c*4+1] + a[8+r]*b[c*4+2] + a[12+r]*b[c*4+3];
+    return o;
+  }
+
+  function setMesh(mesh, dims) {
+    renderGroups = [];
+    yMax = dims[1];
+    for (const t of [1, 2, 3]) {
+      const g = mesh.groups && mesh.groups[t];
+      if (!g || g.quadCount === 0) continue;
+      const posBuf = gl.createBuffer(), norBuf = gl.createBuffer(), idxBuf = gl.createBuffer(), lineBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, g.pos, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, norBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, g.nor, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, g.idx, gl.STATIC_DRAW);
+      const li = new Uint32Array(g.quadCount * 8);
+      for (let q = 0; q < g.quadCount; q++) {
+        const o = q * 4;
+        li.set([o, o + 1, o + 1, o + 2, o + 2, o + 3, o + 3, o], q * 8);
+      }
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineBuf);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, li, gl.STATIC_DRAW);
+      renderGroups.push({ posBuf, norBuf, idxBuf, lineBuf, idxCount: g.idx.length, lineCount: li.length, type: t });
+    }
+    target = [dims[0] / 2, dims[1] / 2, dims[2] / 2];
+    radius = 0.5 * Math.hypot(dims[0], dims[1], dims[2]);
+    dist = radius * 2.2;
+    wire = false;  // 每次新转换重置回实体模式（线框网格看起来像"钢筋"，避免误判）
+  }
+
+  // ---- 渲染循环 ----
+  let frames = 0;
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, canvas.clientWidth * dpr | 0), h = Math.max(1, canvas.clientHeight * dpr | 0);
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0.941, 0.953, 0.969, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    if (renderGroups.length) {
+      if (!dragging && performance.now() - lastInteract > 2500) yaw += 0.0035;  // 闲置自转
+      const eye = [
+        target[0] + dist * Math.cos(pitch) * Math.sin(yaw),
+        target[1] + dist * Math.sin(pitch),
+        target[2] + dist * Math.cos(pitch) * Math.cos(yaw),
+      ];
+      const proj = perspective(0.8, w / h, radius * 0.05, radius * 40);
+      const mvp = mul(proj, lookAt(eye, target, [0, 1, 0]));
+      gl.uniformMatrix4fv(uMVP, false, mvp);
+      gl.uniform1f(uYMax, yMax);
+      // 绘制单组
+      function drawGroup(rg, asWire) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, rg.posBuf);
+        gl.enableVertexAttribArray(aPos);
+        gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, rg.norBuf);
+        gl.enableVertexAttribArray(aNor);
+        gl.vertexAttribPointer(aNor, 3, gl.FLOAT, false, 0, 0);
+        if (asWire) {
+          gl.uniform1f(uMode, 1);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rg.lineBuf);
+          gl.drawElements(gl.LINES, rg.lineCount, gl.UNSIGNED_INT, 0);
+        } else {
+          const st = TYPE_STYLE[rg.type] || TYPE_STYLE[1];
+          gl.uniform1f(uMode, 0);
+          gl.uniform1f(uAlpha, st.alpha);
+          gl.uniform1f(uGrad, st.grad);
+          gl.uniform3f(uColor, st.color[0], st.color[1], st.color[2]);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rg.idxBuf);
+          gl.drawElements(gl.TRIANGLES, rg.idxCount, gl.UNSIGNED_INT, 0);
+        }
+      }
+      if (wire) {
+        // 线框：全部组统一深色线
+        for (const rg of renderGroups) drawGroup(rg, true);
+      } else {
+        // 实体：先不透明组（深度写入），再透明组（混合，关深度写入）
+        const opaque = renderGroups.filter(rg => rg.type === 1);
+        const trans = renderGroups.filter(rg => rg.type !== 1);
+        gl.disable(gl.BLEND);
+        gl.depthMask(true);
+        for (const rg of opaque) drawGroup(rg, false);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.depthMask(false);
+        for (const rg of trans) drawGroup(rg, false);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
+      }
+      frames++;
+    }
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+
+  // ---- 交互：拖拽旋转 / 滚轮缩放（Pointer Events 同时覆盖鼠标与触屏） ----
+  let dragging = false, lastX = 0, lastY = 0, lastInteract = -1e9;
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    yaw -= (e.clientX - lastX) * 0.008;
+    pitch = Math.max(-1.45, Math.min(1.45, pitch + (e.clientY - lastY) * 0.008));
+    lastX = e.clientX; lastY = e.clientY; lastInteract = performance.now();
+  });
+  ['pointerup', 'pointercancel'].forEach(ev => canvas.addEventListener(ev, () => {
+    dragging = false; lastInteract = performance.now();
+  }));
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    dist = Math.max(radius * 0.4, Math.min(radius * 12, dist * Math.exp(e.deltaY * 0.001)));
+    lastInteract = performance.now();
+  }, { passive: false });
+
+  return { setMesh, toggleWire() { wire = !wire; return wire; }, get frames() { return frames; } };
+}
+
+/* ================= 主流程 ================= */
+const state = { files: [] }; // [{name, ab, parsed}]
+const $ = id => document.getElementById(id);
+
+function setStatus(msg, isErr) { const s = $('status'); s.textContent = msg || ''; s.className = isErr ? 'err' : ''; }
+
+function addFiles(fileList) {
+  for (const f of fileList) {
+    if (!/\.litematic$/i.test(f.name)) { setStatus('跳过非 .litematic 文件: ' + f.name, true); continue; }
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const parsed = parseLitematic(rd.result, f.name);
+        state.files.push({ name: f.name, ab: rd.result, parsed });
+        renderFileList();
+        setStatus('');
+      } catch (e) { setStatus(e.message, true); }
+    };
+    rd.readAsArrayBuffer(f);
+  }
+}
+
+function renderFileList() {
+  $('fileList').innerHTML = state.files.map(f => {
+    const regs = f.parsed.regions;
+    const dims = regs.map(r => `${r.sx}x${r.sy}x${r.sz}`).join(', ');
+    return `<div class="file-row"><span>${f.name}</span><span class="ok">✓ ${regs.length} 个区域 (${dims})</span></div>`;
+  }).join('');
+  $('btnGo').disabled = state.files.length === 0;
+  $('btnChunks').disabled = state.files.length === 0;
+  $('btnClear').disabled = state.files.length === 0;
+}
+
+function convert() {
+  if (state.files.length === 0) return;
+  try {
+    setStatus('正在解析方块数据...');
+    setTimeout(() => {
+      try { doConvert(); } catch (e) { setStatus('转换失败: ' + e.message, true); }
+    }, 30);
+  } catch (e) { setStatus('转换失败: ' + e.message, true); }
+}
+
+function doConvert() {
+  // 1. 全局包围盒
+  let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  for (const f of state.files) for (const r of f.parsed.regions) {
+    mn[0] = Math.min(mn[0], r.px); mn[1] = Math.min(mn[1], r.py); mn[2] = Math.min(mn[2], r.pz);
+    mx[0] = Math.max(mx[0], r.px + r.sx); mx[1] = Math.max(mx[1], r.py + r.sy); mx[2] = Math.max(mx[2], r.pz + r.sz);
+  }
+  const gd = [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]];
+  const totalVox = gd[0] * gd[1] * gd[2];
+  if (totalVox > 3e8) throw new Error(`区域过大（${gd.join('x')}，${totalVox.toLocaleString()} 格），内存吃不消，请拆分多次转换`);
+  const vox = new Uint8Array(totalVox);
+  // 2. 解包所有 region（vox 值 = 类型：1实心 2玻璃 3水；草木旗帜跳过计数；半砖/楼梯/栅栏进 extras）
+  let skippedPlants = 0;
+  const extras = [];
+  for (const f of state.files) for (const r of f.parsed.regions) skippedPlants += unpackRegion(r, vox, gd, mn, extras) || 0;
+  const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
+  for (let i = 0; i < vox.length; i++) if (vox[i]) counts[vox[i]]++;
+  for (const e of extras) counts[e.kind]++;
+  const renderCount = counts[1] + counts[2] + counts[3] + counts[4] + counts[5] + counts[6] + counts[7];
+  if (renderCount === 0) throw new Error('没有解析到任何可渲染方块（文件可能只含空气/草木，或格式异常）');
+  // 档案自带的方块总数（正确性比对神谕）与探测到的打包格式
+  const oracle = state.files.reduce((a, f) => a + (f.parsed.totalBlocks || 0), 0);
+  const packing = [...new Set(state.files.flatMap(f => f.parsed.regions.map(r => r.detected).filter(Boolean)))].join('; ') || '-';
+  // 调试切片：?slice=1 时输出中间 Y 层俯视 ASCII 图 + 高度图 + quad 尺寸分布
+  if (new URLSearchParams(location.search).get('slice')) {
+    const midY = Math.floor(gd[1] / 2);
+    let out = `Y=${midY} 俯视切片（# = 实心，每行沿 Z，每列沿 X）\n`;
+    for (let z = 0; z < gd[2]; z++) {
+      let line = '';
+      for (let x = 0; x < gd[0]; x++) line += vox[(midY * gd[2] + z) * gd[0] + x] ? '#' : '.';
+      out += line + '\n';
+    }
+    // 高度图：每 (x,z) 列的最高实心 y（0-9 超过显示*，空格=无）
+    out += `\n高度图（每格=该列最高 Y，空格=空列）\n`;
+    for (let z = 0; z < gd[2]; z++) {
+      let line = '';
+      for (let x = 0; x < gd[0]; x++) {
+        let top = -1;
+        for (let y = gd[1] - 1; y >= 0; y--) if (vox[(y * gd[2] + z) * gd[0] + x]) { top = y; break; }
+        line += top < 0 ? ' ' : (top < 10 ? String(top) : '*');
+      }
+      out += line + '\n';
+    }
+    let pre = document.getElementById('sliceDebug');
+    if (!pre) {
+      pre = document.createElement('pre');
+      pre.id = 'sliceDebug';
+      pre.style.cssText = 'background:#0f172a;color:#a5f3fc;font-size:12px;line-height:1.15;padding:12px;border-radius:8px;overflow:auto;margin-top:14px;';
+      $('stats').parentElement.appendChild(pre);
+    }
+    pre.textContent = out;
+    // quad 尺寸分布（greedyMesh 后统计）
+    setTimeout(() => {
+      const mesh = window._lastMesh;
+      if (!mesh || !mesh.quads) return;
+      const dist = { '1x1': 0, 'wide': 0, 'tall': 0, 'big': 0 };
+      let maxW = 0, maxH = 0;
+      for (const q of mesh.quads) {
+        if (q.w > maxW) maxW = q.w;
+        if (q.h > maxH) maxH = q.h;
+        if (q.w === 1 && q.h === 1) dist['1x1']++;
+        else if (q.w > q.h) dist['wide']++;
+        else if (q.h > q.w) dist['tall']++;
+        else dist['big']++;
+      }
+      pre.textContent += `\nquad 分布: 1x1=${dist['1x1']} 宽扁=${dist['wide']} 竖长=${dist['tall']} 方块=${dist['big']} | 最大 w=${maxW} h=${maxH}（竖长 quad 过多=huge拉伸，正常建筑应宽扁为主）`;
+    }, 100);
+  }
+  setStatus('正在生成网格（剔除内部方块）...');
+  setTimeout(() => {
+    // 3. 贪心网格（含半砖/楼梯/栅栏盒体）
+    const mesh = greedyMesh(vox, gd, extras);
+    window._lastMesh = mesh;
+    // 网格级神谕：6 个方向全部面 (axis,sign,边界,u,v,类型) 与可见性规则逐格比对（含区域 min/max 边界面）
+    let meshOracle = '';
+    try {
+      const vis = (n, t) => n === 0 || ((n === 2 || n === 3) && n !== t);
+      const voxAt = (x, y, z) => (x < 0 || y < 0 || z < 0 || x >= gd[0] || y >= gd[1] || z >= gd[2]) ? 0 : vox[(y * gd[2] + z) * gd[0] + x];
+      const expected = new Set();
+      for (let axis = 0; axis < 3; axis++) {
+        const u = (axis + 1) % 3, v = (axis + 2) % 3;
+        const adim = gd[axis], udim = gd[u], vdim = gd[v];
+        for (let b0 = 0; b0 <= adim; b0++) {
+          for (let j = 0; j < vdim; j++) {
+            for (let i = 0; i < udim; i++) {
+              const c1 = [0, 0, 0]; c1[axis] = b0 - 1; c1[u] = i; c1[v] = j;
+              const c2 = [0, 0, 0]; c2[axis] = b0; c2[u] = i; c2[v] = j;
+              const T1 = voxAt(c1[0], c1[1], c1[2]);
+              const T2 = voxAt(c2[0], c2[1], c2[2]);
+              if (T1 && vis(T2, T1)) expected.add(axis + '|1|' + b0 + '|' + i + '|' + j + '|' + T1);
+              if (T2 && vis(T1, T2)) expected.add(axis + '|-1|' + b0 + '|' + i + '|' + j + '|' + T2);
+            }
+          }
+        }
+      }
+      const actual = new Set();
+      for (const q of mesh.quads) {
+        if (!Number.isInteger(q.base[0]) || !Number.isInteger(q.base[1]) || !Number.isInteger(q.base[2])) continue;  // 跳过 extras 盒体
+        const u = (q.axis + 1) % 3, v = (q.axis + 2) % 3;
+        for (let jj = q.base[v]; jj < q.base[v] + q.h; jj++)
+          for (let ii = q.base[u]; ii < q.base[u] + q.w; ii++)
+            actual.add(q.axis + '|' + q.sign + '|' + q.base[q.axis] + '|' + ii + '|' + jj + '|' + q.type);
+      }
+      let miss = 0, over = 0;
+      for (const k of expected) if (!actual.has(k)) miss++;
+      for (const k of actual) if (!expected.has(k)) over++;
+      meshOracle = (miss === 0 && over === 0) ? '网格✓' : '网格✗ 缺' + miss + '多' + over;
+    } catch (e) { meshOracle = '网格校验异常'; }
+    window._meshOracle = meshOracle;
+    // 4. GLB
+    const glb = buildGLB(mesh);
+    const blob = new Blob([glb], { type: 'model/gltf-binary' });
+    const url = URL.createObjectURL(blob);
+    // 统计
+    const tris = mesh.quadCount * 2;
+    // 档案比对：渲染方块 + 剔除草木 = 档案 TotalBlocks
+    const oracleNote = oracle > 0
+      ? ((renderCount + skippedPlants) === oracle ? '✓' : '≠') + ' ' + oracle.toLocaleString()
+      : '无';
+    $('stats').style.display = 'grid';
+    $('stats').innerHTML = `
+      <div class="stat"><div class="v">${gd[0]}×${gd[1]}×${gd[2]}</div><div class="k">区域尺寸（格）</div></div>
+      <div class="stat"><div class="v">${renderCount.toLocaleString()}</div><div class="k">渲染方块（档案 ${oracleNote}）</div></div>
+      <div class="stat"><div class="v">${tris.toLocaleString()}</div><div class="k">三角形</div></div>
+      <div class="stat"><div class="v" style="font-size:0.95rem">${window._meshOracle}</div><div class="k">网格-体素一致性</div></div>
+      <div class="stat"><div class="v">${(blob.size / 1048576).toFixed(2)} MB</div><div class="k">GLB 大小</div></div>
+      <div class="stat"><div class="v" style="font-size:0.9rem">${packing}</div><div class="k">打包格式（自动探测）</div></div>
+      <div class="stat"><div class="v" style="font-size:0.9rem">${[
+        skippedPlants && '草木 ' + skippedPlants.toLocaleString(),
+        counts[2] && '玻璃 ' + counts[2].toLocaleString(),
+        counts[3] && '水 ' + counts[3].toLocaleString(),
+        counts[4] && '半砖 ' + counts[4].toLocaleString(),
+        counts[5] && '楼梯 ' + counts[5].toLocaleString(),
+        counts[6] && '栅栏 ' + counts[6].toLocaleString(),
+        counts[7] && '门 ' + counts[7].toLocaleString(),
+      ].filter(Boolean).join(' · ') || '无'}</div><div class="k">分类统计</div></div>`;
+    // 下载
+    const dl = $('btnDl');
+    dl.href = url;
+    $('dlRow').style.display = 'flex';
+    $('sizeHint').textContent = blob.size < 40 * 1048576
+      ? '✓ 小于 40MB，可直接放进 GitHub 仓库 models/ 目录'
+      : '⚠ 超过 40MB，建议放 R2 桶并通过 Worker 提供';
+    // 预览（零依赖 WebGL，file:// 也能跑）
+    $('previewCard').style.display = 'block';
+    if (!window._glp) {
+      window._glp = createGLPreview($('previewCanvas'));
+      $('btnWire').onclick = () => {
+        const on = window._glp && window._glp.toggleWire();
+        $('btnWire').textContent = on ? '⬜ 实体模式' : '🔲 线框模式';
+      };
+    }
+    if (window._glp) window._glp.setMesh(mesh, gd);
+    $('btnWire').textContent = '🔲 线框模式';  // 与 setMesh 内的重置同步
+    // ?mv=1：GLB 回读比对（验证编码后的文件与内存网格一致）+ model-viewer 端到端加载
+    let mvRt = '';
+    if (new URLSearchParams(location.search).get('mv')) {
+      let rt = 'GLB回读: ';
+      try {
+        const dv = new DataView(glb);
+        const magic = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
+        const total = dv.getUint32(8, true);
+        const jsonLen = dv.getUint32(12, true);
+        const json = JSON.parse(new TextDecoder().decode(new Uint8Array(glb, 20, jsonLen)));
+        const binOff = 28 + jsonLen;
+        const binLen2 = dv.getUint32(binOff - 8, true);
+        const bin = new Uint8Array(glb, binOff, binLen2);
+        // 按组遍历：meshes[i] 对应存在的类型组（顺序 1→2→3 跳过空组）
+        const activeTypes = [1, 2, 3].filter(t => mesh.groups[t] && mesh.groups[t].quadCount > 0);
+        let allOK = true, gi = 0;
+        for (const t of activeTypes) {
+          const prim = json.meshes[gi].primitives[0];
+          const readAcc = (ai, Ctor, scale) => {
+            const acc = json.accessors[ai];
+            const bv = json.bufferViews[acc.bufferView];
+            return new Ctor(bin.buffer, bin.byteOffset + bv.byteOffset, acc.count * scale);
+          };
+          const g = mesh.groups[t];
+          const posBack = readAcc(prim.attributes.POSITION, Float32Array, 3);
+          const idxBack = readAcc(prim.indices, Uint32Array, 1);
+          let ok = posBack.length === g.pos.length && idxBack.length === g.idx.length;
+          for (let i = 0; ok && i < posBack.length; i++) if (posBack[i] !== g.pos[i]) ok = false;
+          for (let i = 0; ok && i < idxBack.length; i++) if (idxBack[i] !== g.idx[i]) ok = false;
+          if (!ok) allOK = false;
+          gi++;
+        }
+        rt += `magic=${magic} total=${total}/${glb.byteLength} ${activeTypes.length}组(${activeTypes.join(',')}) ${allOK ? '全部✓' : '✗不一致'}`;
+      } catch (e) { rt += '解析失败 ' + e.message; }
+      mvRt = ' ||| ' + rt;
+      const mv = $('mvCheck');
+      if (mv) {
+        // 端到端：POST 存盘后用真实 .glb URL 加载（与 map.html 完全一致的路径）
+        fetch('/models/city-model.glb', { method: 'POST', body: glb })
+          .then(() => { mv.setAttribute('src', '/models/city-model.glb'); })
+          .catch(e => setStatus('POST 保存失败: ' + e.message, true));
+        mv.style.display = 'block';
+      }
+    }
+    const noGlp = window._glp ? '' : '（浏览器不支持 WebGL，无预览，下载不受影响）';
+    setStatus(`完成！${tris.toLocaleString()} 个三角形，白模已就绪。${noGlp}${mvRt}`);
+  }, 30);
+}
+
+/* ================= 分区块导出（渐进加载沙盘用） =================
+   每个区域单独体素化+网格化成局部坐标 GLB；manifest.json 记录世界原点与尺寸，
+   map.html 按 BFS 涟漪逐块 fetch，从下方上浮对齐落位 */
+let chunkOut = null;
+function doChunkExport() {
+  setStatus('正在按区域分块生成网格...');
+  setTimeout(() => {
+    try {
+      const list = [];
+      let i = 0;
+      for (const f of state.files) for (const r of f.parsed.regions) {
+        if (r.empty || !r.paletteSize) continue;
+        const gd = [r.sx, r.sy, r.sz];
+        const vox = new Uint8Array(r.sx * r.sy * r.sz);
+        const extras = [];
+        unpackRegion(r, vox, gd, [r.px, r.py, r.pz], extras);   // gmin=自身原点 → 局部坐标
+        const mesh = greedyMesh(vox, gd, extras);
+        const glb = buildGLB(mesh);
+        const blob = new Blob([glb], { type: 'model/gltf-binary' });
+        const name = 'chunk_' + String(i).padStart(2, '0') + '.glb';
+        list.push({
+          name, blob, url: URL.createObjectURL(blob),
+          entry: { file: 'models/chunks/' + name, x: r.px, y: r.py, z: r.pz, sx: r.sx, sy: r.sy, sz: r.sz },
+          tris: mesh.quadCount * 2,
+        });
+        i++;
+      }
+      if (!list.length) throw new Error('没有可导出的区域（全部为空）');
+      chunkOut = { list, manifest: { chunks: list.map(c => c.entry) } };
+      $('chunkCard').style.display = 'block';
+      $('chunkList').innerHTML = list.map(c =>
+        `<div class="file-row"><span>${c.name}</span><span class="ok">✓ ${c.entry.sx}×${c.entry.sy}×${c.entry.sz} @(${c.entry.x},${c.entry.y},${c.entry.z}) · ${c.tris.toLocaleString()} 三角形 · ${(c.blob.size / 1048576).toFixed(2)} MB</span></div>`).join('');
+      $('btnDlManifest').href = URL.createObjectURL(new Blob([JSON.stringify(chunkOut.manifest, null, 2)], { type: 'application/json' }));
+      setStatus(`分区块导出完成：${list.length} 个区块 + manifest.json`);
+    } catch (e) { setStatus('分区块导出失败: ' + e.message, true); }
+  }, 30);
+}
+$('btnChunks').onclick = doChunkExport;
+$('btnDlAll').onclick = () => {
+  if (!chunkOut) return;
+  const dl = (href, name) => { const a = document.createElement('a'); a.href = href; a.download = name; document.body.appendChild(a); a.click(); a.remove(); };
+  chunkOut.list.forEach((c, k) => setTimeout(() => dl(c.url, c.name), k * 400));
+  setTimeout(() => dl($('btnDlManifest').href, 'manifest.json'), chunkOut.list.length * 400);
+};
+$('btnPostAll').onclick = async () => {
+  if (!chunkOut) return;
+  try {
+    for (const c of chunkOut.list) {
+      const r = await fetch('/' + c.entry.file, { method: 'POST', body: c.blob });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+    }
+    const r = await fetch('/models/chunks/manifest.json', { method: 'POST', body: JSON.stringify(chunkOut.manifest) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    setStatus(`已 POST ${chunkOut.list.length} 个区块 + manifest.json，打开 /map.html 验证渐进加载`);
+  } catch (e) { setStatus('POST 失败（需先运行 tools/serve.ps1 本地服务器）: ' + e.message, true); }
+};
+
+/* ================= 自测：内置测试场景（塔 + 平台 + 基座） ================= */
+/* 按真实 Litematica 格式生成：gzip 压缩、Position/Size 为 IntList、
+   Metadata 带 Long 时间戳、Palette 带 Properties、含 Entities 列表 */
+function buildTestLitematic() {
+  // NBT 写入器（仅本工具需要的类型）
+  class W {
+    constructor() { this.bytes = []; }
+    push(...b) { for (const x of b) this.bytes.push(x); }
+    str(s) { const e = new TextEncoder().encode(s); this.push(e.length >> 8, e.length & 255); this.bytes.push(...e); }
+    i32(v) { this.push((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255); }
+    long(hi, lo) { this.i32(hi); this.i32(lo >>> 0); }
+    f64(v) { const b = new ArrayBuffer(8); new DataView(b).setFloat64(0, v); this.bytes.push(...new Uint8Array(b)); }
+    tagHeader(t, name) { this.push(t); this.str(name); }
+    comp(name, fn) { this.tagHeader(10, name); fn(this); this.push(0); }
+    intList(name, arr) { this.tagHeader(9, name); this.push(3); this.i32(arr.length); for (const v of arr) this.i32(v); }
+    dblList(name, arr) { this.tagHeader(9, name); this.push(6); this.i32(arr.length); for (const v of arr) this.f64(v); }
+    longTag(name, hi, lo) { this.tagHeader(4, name); this.long(hi, lo); }
+  }
+  const w = new W();
+  const SX = 32, SY = 24, SZ = 32;
+  // palette（blockstate 级，楼梯不同朝向=不同项）：
+  // 0 air 1 stone 2 dirt 3 plank 4 glass 5 water 6 short_grass 7 banner
+  // 8 slab(bottom) 9 stairs(N,bottom) 10 stairs(E,top) 11 fence 12 stone_bricks
+  // 13 door(closed,N) 14 door(open,E) 15 sign 16 button 17 painting 18 potted
+  // 19 trapdoor(closed,bottom) 20 trapdoor(open,N) 21 trapdoor(closed,top) → 22 项 = 5bit
+  const PALETTE = [
+    { name: 'minecraft:air' },
+    { name: 'minecraft:stone', props: { snowy: 'false' } },
+    { name: 'minecraft:dirt' },
+    { name: 'minecraft:oak_planks' },
+    { name: 'minecraft:glass' },
+    { name: 'minecraft:water' },
+    { name: 'minecraft:short_grass' },
+    { name: 'minecraft:white_banner' },
+    { name: 'minecraft:stone_brick_slab', props: { half: 'bottom' } },
+    { name: 'minecraft:oak_stairs', props: { facing: 'north', half: 'bottom' } },
+    { name: 'minecraft:oak_stairs', props: { facing: 'east', half: 'top' } },
+    { name: 'minecraft:oak_fence' },
+    { name: 'minecraft:stone_bricks' },
+    { name: 'minecraft:oak_door', props: { facing: 'north', half: 'lower', open: 'false' } },
+    { name: 'minecraft:oak_door', props: { facing: 'east', half: 'upper', open: 'true' } },
+    { name: 'minecraft:oak_sign' },
+    { name: 'minecraft:stone_button', props: { face: 'wall' } },
+    { name: 'minecraft:painting' },
+    { name: 'minecraft:potted_dandelion' },
+    { name: 'minecraft:oak_trapdoor', props: { half: 'bottom', open: 'false', facing: 'north' } },
+    { name: 'minecraft:oak_trapdoor', props: { half: 'bottom', open: 'true', facing: 'north' } },
+    { name: 'minecraft:oak_trapdoor', props: { half: 'top', open: 'false', facing: 'east' } },
+  ];
+  const vol = SX * SY * SZ;
+  const blocks = new Uint8Array(vol); // palette 索引
+  const set = (x, y, z, v) => { blocks[(y * SZ + z) * SX + x] = v; };
+  for (let y = 0; y < 2; y++) for (let z = 0; z < SZ; z++) for (let x = 0; x < SX; x++) set(x, y, z, 1); // 基座=stone
+  for (let y = 2; y < 20; y++) for (let z = 13; z < 19; z++) for (let x = 13; x < 19; x++) set(x, y, z, 2); // 中央塔=dirt
+  for (let z = 4; z < 28; z += 2) for (let x = 4; x < 28; x += 2) set(x, 14, z, 3); // 悬空点阵平台=plank
+  for (let x = 0; x < SX; x++) { set(x, 21, 0, 4); set(x, 21, SZ - 1, 4); } // 边框=glass
+  // 玻璃盒（空心立方罩：6 面）
+  for (let y = 2; y < 6; y++) for (let z = 2; z < 6; z++) for (let x = 24; x < 28; x++)
+    if (y === 2 || y === 5 || z === 2 || z === 5 || x === 24 || x === 27) set(x, y, z, 4);
+  // 水池：基座上填水
+  for (let z = 8; z < 12; z++) for (let x = 8; x < 12; x++) set(x, 2, z, 5);
+  // 草与旗帜（应被剔除，不计入渲染）
+  set(6, 2, 6, 6); set(7, 2, 6, 6); set(25, 20, 2, 7);
+  // 半砖（底/顶）、楼梯（两朝向）、栅栏排、石砖、贴边方块（检验 min 侧外立面补全）
+  set(5, 2, 24, 8); set(6, 2, 24, 8); set(8, 2, 24, 8);
+  set(20, 2, 10, 9); set(22, 2, 10, 10);
+  set(9, 2, 20, 11); set(10, 2, 20, 11); set(11, 2, 20, 11); set(12, 2, 20, 1);
+  set(4, 2, 26, 12); set(5, 2, 26, 12);
+  set(0, 2, 0, 1); set(0, 3, 0, 1); set(1, 2, 0, 1); set(0, 2, 1, 1);
+  // 门（关=facing north 贴 +Z 侧；开=facing east 旋到 -X 侧）+ 剔除类（告示牌/按钮/画/盆栽）
+  set(15, 2, 12, 13); set(15, 3, 12, 13);            // 关闭门（上下两半）
+  set(17, 2, 12, 14); set(17, 3, 12, 14);            // 开启门（上下两半）
+  set(14, 3, 14, 15); set(16, 3, 14, 16); set(18, 3, 14, 17); set(20, 3, 14, 18);
+  // 活板门：关（底平铺）/ 开（贴北边竖立）/ 关（顶平铺）
+  set(19, 2, 16, 19); set(21, 2, 16, 20); set(23, 2, 16, 21);
+  // 打包 BlockStates：连续位流格式（真实 .litematic 实测所用）
+  function packBits(blk, paletteSize) {
+    const bits = Math.max(2, Math.ceil(Math.log2(paletteSize)));
+    const nLong = Math.ceil(blk.length * bits / 64);
+    const hi = new Uint32Array(nLong), lo = new Uint32Array(nLong);
+    const vMask = (1 << bits) - 1;
+    for (let i = 0; i < blk.length; i++) {
+      const v = blk[i] & vMask;
+      for (let k = 0; k < bits; k++) {
+        if (!((v >>> k) & 1)) continue;
+        const abs = i * bits + k;
+        const l = Math.floor(abs / 64), b = abs % 64;
+        if (b < 32) lo[l] |= 1 << b; else hi[l] |= 1 << (b - 32);
+      }
+    }
+    return { hi, lo, nLong };
+  }
+  const st1 = packBits(blocks, PALETTE.length);
+  // 副区域：与主区域隔 1 格（相邻 → 验证地图页 BFS 涟漪调度），石墙 + 玻璃顶小屋
+  const SX2 = 10, SY2 = 12, SZ2 = 10, vol2 = SX2 * SY2 * SZ2;
+  const PAL2 = ['minecraft:air', 'minecraft:stone', 'minecraft:glass'];
+  const blocks2 = new Uint8Array(vol2);
+  const set2 = (x, y, z, v) => { blocks2[(y * SZ2 + z) * SX2 + x] = v; };
+  for (let y = 0; y < 2; y++) for (let z = 0; z < SZ2; z++) for (let x = 0; x < SX2; x++) set2(x, y, z, 1);
+  for (let y = 2; y <= 8; y++) for (let z = 0; z < SZ2; z++) for (let x = 0; x < SX2; x++)
+    if (x === 0 || x === SX2 - 1 || z === 0 || z === SZ2 - 1) set2(x, y, z, 1);
+  for (let y = 9; y <= 10; y++) for (let z = 0; z < SZ2; z++) for (let x = 0; x < SX2; x++) set2(x, y, z, 2);
+  const st2 = packBits(blocks2, PAL2.length);
+  w.comp('', w1 => {
+    w1.tagHeader(3, 'MinecraftDataVersion'); w1.i32(3700);
+    w1.tagHeader(3, 'Version'); w1.i32(6);
+    w1.tagHeader(3, 'SubVersion'); w1.i32(1);
+    w1.tagHeader(8, 'Name'); w1.str('selftest');
+    // Metadata（真实格式：IntList EnclosingSize + Long 时间戳 + 多个 String）
+    w1.comp('Metadata', w2 => {
+      w2.intList('EnclosingSize', [SX, SY, SZ]);
+      w2.tagHeader(3, 'RegionCount'); w2.i32(2);
+      w2.tagHeader(3, 'TotalVolumes'); w2.i32(vol + vol2);
+      w2.tagHeader(3, 'TotalBlocks'); w2.i32(
+        blocks.reduce((a, b) => a + (b > 0 ? 1 : 0), 0) + blocks2.reduce((a, b) => a + (b > 0 ? 1 : 0), 0));
+      w2.longTag('TimeCreated', 0, 1700000000);
+      w2.longTag('TimeModified', 0, 1700000001);
+      w2.tagHeader(8, 'AuthorName'); w2.str('selftest');
+      w2.tagHeader(8, 'Description'); w2.str('内置自测场景');
+      w2.tagHeader(8, 'Software'); w2.str('litematic2glb-selftest');
+    });
+    w1.comp('Regions', w2 => {
+      w2.comp('主区域', w3 => {
+        // 真实格式：Position/Size 是 IntList（List<Int>），不是 IntArray
+        w3.intList('Position', [100, 60, 200]);
+        w3.intList('Size', [SX, SY, SZ]);
+        // BlockStatePalette: List<Compound>（List 元素不带 tag 头）；按 PALETTE 表写（含 Properties）
+        w3.push(9); w3.str('BlockStatePalette'); w3.push(10); w3.i32(PALETTE.length);
+        for (const pe of PALETTE) {
+          w3.tagHeader(8, 'Name'); w3.str(pe.name);
+          if (pe.props) {
+            w3.comp('Properties', w5 => {
+              for (const k of Object.keys(pe.props)) { w5.tagHeader(8, k); w5.str(pe.props[k]); }
+            });
+          }
+          w3.push(0);
+        }
+        // BlockStates: LongArray
+        w3.tagHeader(12, 'BlockStates'); w3.i32(st1.nLong);
+        for (let i = 0; i < st1.nLong; i++) w3.long(st1.hi[i], st1.lo[i]);
+        // TileEntities: 空 List<Compound>
+        w3.push(9); w3.str('TileEntities'); w3.push(10); w3.i32(0);
+        // Entities: List<Compound>（元素含 List<Double> 的 Pos，覆盖嵌套 List 解析）
+        w3.push(9); w3.str('Entities'); w3.push(10); w3.i32(1);
+        w3.dblList('Pos', [10.5, 64.0, 20.5]);
+        w3.tagHeader(8, 'id'); w3.str('minecraft:villager');
+        w3.push(0);
+      });
+      // 副区域（x=133 与主区域 x∈[100,132] 隔 1 格相邻）
+      w2.comp('副区域', w3 => {
+        w3.intList('Position', [133, 60, 205]);
+        w3.intList('Size', [SX2, SY2, SZ2]);
+        w3.push(9); w3.str('BlockStatePalette'); w3.push(10); w3.i32(PAL2.length);
+        for (const nm of PAL2) { w3.tagHeader(8, 'Name'); w3.str(nm); w3.push(0); }
+        w3.tagHeader(12, 'BlockStates'); w3.i32(st2.nLong);
+        for (let i = 0; i < st2.nLong; i++) w3.long(st2.hi[i], st2.lo[i]);
+        w3.push(9); w3.str('TileEntities'); w3.push(10); w3.i32(0);
+        w3.push(9); w3.str('Entities'); w3.push(10); w3.i32(0);
+      });
+    });
+  });
+  const raw = new Uint8Array(w.bytes);
+  return pako.gzip(raw);  // 真实 .litematic 为 gzip 压缩
+}
+
+/* ================= UI 绑定 ================= */
+const drop = $('drop'), fileInput = $('fileInput');
+drop.onclick = () => fileInput.click();
+fileInput.onchange = () => { addFiles(fileInput.files); fileInput.value = ''; };
+['dragover', 'dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('on'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('on'); }));
+drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+$('btnGo').onclick = convert;
+
+// URL 参数 ?load=相对路径：自动从服务器拉取文件加入列表（本地调试 / 远程重测用）
+(function () {
+  const q = new URLSearchParams(location.search).get('load');
+  if (!q) return;
+  fetch(q)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+    .then(ab => {
+      const name = q.split('/').pop();
+      const parsed = parseLitematic(ab, name);
+      state.files.push({ name, ab, parsed });
+      renderFileList();
+      setStatus('已从服务器加载 ' + name + '，点击"生成白模 GLB"开始转换');
+    })
+    .catch(e => setStatus('加载 ' + q + ' 失败: ' + e.message, true));
+})();
+$('btnClear').onclick = () => { state.files = []; chunkOut = null; renderFileList(); $('stats').style.display = 'none'; $('dlRow').style.display = 'none'; $('previewCard').style.display = 'none'; $('chunkCard').style.display = 'none'; setStatus(''); };
+$('btnTest').onclick = () => {
+  try {
+    const ab = buildTestLitematic();
+    const parsed = parseLitematic(ab, 'selftest.litematic');
+    state.files = [{ name: 'selftest.litematic（内置）', ab, parsed }];
+    renderFileList();
+    convert();
+  } catch (e) { setStatus('自测失败: ' + e.message, true); }
+};
+</script>
+</body>
+</html>

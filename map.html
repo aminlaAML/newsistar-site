@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>地图库 - 新汐斯塔共和国</title>
+  <meta name="description" content="新汐斯塔共和国 3D 城市沙盘。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="apple-touch-icon" href="/favicon.ico">
+  <style>
+    html, body { height: 100%; }
+    body { overflow: hidden; margin: 0; }
+    /* 导航栏：半透明 + 毛玻璃，悬浮于 3D 画布之上 */
+    .navbar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(10, 10, 15, 0.5);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    /* 全屏 3D 舞台（CSS 渐变做底，画布透明叠加） */
+    .stage {
+      position: fixed; inset: 0;
+      background: radial-gradient(ellipse at 50% 42%, #1b1b27 0%, #0a0a0f 78%);
+    }
+    #glcanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+    /* 左下角信息条 */
+    .stage-info {
+      position: fixed; left: 20px; bottom: 20px; z-index: 100;
+      color: var(--text-muted); font-size: 0.82rem; line-height: 1.7;
+      background: rgba(10, 10, 15, 0.5); backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px; padding: 12px 16px;
+      pointer-events: none; min-width: 150px;
+    }
+    .stage-info b { color: var(--text); font-weight: 700; }
+    .stage-info .prog { color: var(--primary-light); font-variant-numeric: tabular-nums; }
+    /* 模型未上线占位 */
+    .stage-empty {
+      position: fixed; inset: 0; display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      color: var(--text-muted); text-align: center; z-index: 90;
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-logo">
+        <img src="favicon.ico" class="logo-mark" alt="logo" style="width:28px;height:28px;object-fit:contain;background:transparent;border:none;box-shadow:none;border-radius:0;filter:none;display:block;">
+        <span class="logo-text">新汐斯塔</span>
+      </a>
+      <ul class="nav-menu">
+        <li><a href="index.html">首页</a></li>
+        <li><a href="about.html">关于</a></li>
+        <li><a href="map.html">地图</a></li>
+        <li><a href="login.html" id="navAuth" class="nav-cta">登录</a></li>
+      </ul>
+      <button class="nav-toggle" aria-label="菜单">☰</button>
+    </div>
+  </nav>
+
+  <div class="stage">
+    <canvas id="glcanvas"></canvas>
+  </div>
+
+  <div class="stage-empty" id="stageEmpty">
+    <div style="font-size: 2.4rem; margin-bottom: 14px;">🏛</div>
+    <div style="font-size: 1.05rem; color: var(--text-2);">城市沙盘制作中</div>
+    <div style="font-size: 0.85rem; margin-top: 6px;">等待玩家采集数据上线</div>
+  </div>
+
+  <div class="stage-info" id="stageInfo">
+    <b>新汐斯塔城市沙盘</b><br>
+    <span class="prog" id="progText">区块 0/0</span><br>
+    拖拽旋转 · 滚轮缩放 · 闲置自动巡览
+  </div>
+
+  <script src="assets/js/main.js?v=2"></script>
+  <script type="module">
+    /* ================= 全屏多区块渐进加载沙盘 =================
+       manifest（models/chunks/manifest.json）：
+       { "chunks": [ {"file":"chunk_x_z.glb","x":世界X,"y":世界Y,"z":世界Z,"sx":..,"sy":..,"sz":..}, ... ] }
+       加载策略：从最接近全体质心的区块开始 BFS——本区块开始上浮时调度相邻区块，
+       相邻再调度相邻，涟漪式铺满全图。无 manifest 时回退单模型 city-model.glb。 */
+    'use strict';
+
+    const canvas = document.getElementById('glcanvas');
+    const gl = canvas.getContext('webgl2', { antialias: true, alpha: true, premultipliedAlpha: false })
+      || (() => { const g = canvas.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: false }); if (g) g.getExtension('OES_element_index_uint'); return g; })();
+
+    /* ---------- 着色器 ---------- */
+    function sh(type, src) {
+      const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+      return s;
+    }
+    // 建筑网格：白模高度渐变 / 玻璃 / 水（与转换工具一致的观感）
+    const meshVS = 'attribute vec3 aPos; attribute vec3 aNor; uniform mat4 uMVP; uniform vec3 uOffset;' +
+      'varying vec3 vNor; varying float vWy;' +
+      'void main(){ vec3 p = aPos + uOffset; gl_Position = uMVP * vec4(p, 1.0); vNor = aNor; vWy = p.y; }';
+    const meshFS = 'precision mediump float; varying vec3 vNor; varying float vWy;' +
+      'uniform vec3 uColor; uniform float uAlpha, uGrad, uYMin, uYMax;' +
+      'void main(){' +
+      ' vec3 N = normalize(vNor); if(!gl_FrontFacing) N = -N;' +
+      ' float d1 = max(dot(N, normalize(vec3(0.4,0.8,0.55))), 0.0);' +
+      ' float d2 = max(dot(N, normalize(vec3(-0.55,0.15,-0.6))), 0.0);' +
+      ' float t = clamp((vWy - uYMin) / max(uYMax - uYMin, 1.0), 0.0, 1.0);' +
+      ' vec3 grad = mix(vec3(0.88,0.92,0.98), vec3(1.0), t);' +
+      ' vec3 base = mix(uColor, grad, uGrad);' +
+      ' gl_FragColor = vec4(base * (0.52 + 0.44*d1 + 0.18*d2), uAlpha); }';
+    // 粒子：加色混合的绿/粉线条与光点
+    const partVS = 'attribute vec3 aPos; attribute vec4 aCol; attribute float aSize;' +
+      'uniform mat4 uMVP; varying vec4 vCol;' +
+      'void main(){ gl_Position = uMVP * vec4(aPos, 1.0); vCol = aCol; gl_PointSize = aSize; }';
+    const partFS = 'precision mediump float; varying vec4 vCol;' +
+      'void main(){ vec2 d = gl_PointCoord - 0.5; float r = length(d);' +
+      ' if(r > 0.5) discard; float a = smoothstep(0.5, 0.05, r);' +
+      ' gl_FragColor = vec4(vCol.rgb, vCol.a * a); }';
+
+    const meshProg = gl.createProgram();
+    gl.attachShader(meshProg, sh(gl.VERTEX_SHADER, meshVS));
+    gl.attachShader(meshProg, sh(gl.FRAGMENT_SHADER, meshFS));
+    gl.linkProgram(meshProg);
+    const partProg = gl.createProgram();
+    gl.attachShader(partProg, sh(gl.VERTEX_SHADER, partVS));
+    gl.attachShader(partProg, sh(gl.FRAGMENT_SHADER, partFS));
+    gl.linkProgram(partProg);
+
+    const mLoc = {
+      aPos: gl.getAttribLocation(meshProg, 'aPos'), aNor: gl.getAttribLocation(meshProg, 'aNor'),
+      uMVP: gl.getUniformLocation(meshProg, 'uMVP'), uOffset: gl.getUniformLocation(meshProg, 'uOffset'),
+      uColor: gl.getUniformLocation(meshProg, 'uColor'), uAlpha: gl.getUniformLocation(meshProg, 'uAlpha'),
+      uGrad: gl.getUniformLocation(meshProg, 'uGrad'), uYMin: gl.getUniformLocation(meshProg, 'uYMin'),
+      uYMax: gl.getUniformLocation(meshProg, 'uYMax'),
+    };
+    const pLoc = {
+      aPos: gl.getAttribLocation(partProg, 'aPos'), aCol: gl.getAttribLocation(partProg, 'aCol'),
+      aSize: gl.getAttribLocation(partProg, 'aSize'), uMVP: gl.getUniformLocation(partProg, 'uMVP'),
+    };
+    const MAT_STYLE = [
+      { color: [1.0, 1.0, 1.0], alpha: 1.0, grad: 1 },
+      { color: [0.94, 0.97, 1.0], alpha: 0.30, grad: 0 },
+      { color: [0.46, 0.74, 0.98], alpha: 0.75, grad: 0 },
+    ];
+
+    /* ---------- mat4（列主序） ---------- */
+    function perspective(fovy, aspect, near, far) {
+      const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far), m = new Float32Array(16);
+      m[0] = f / aspect; m[5] = f; m[10] = (far + near) * nf; m[11] = -1; m[14] = 2 * far * near * nf;
+      return m;
+    }
+    function lookAt(e, c, up) {
+      let zx = e[0]-c[0], zy = e[1]-c[1], zz = e[2]-c[2];
+      const zl = Math.hypot(zx, zy, zz) || 1; zx/=zl; zy/=zl; zz/=zl;
+      let xx = up[1]*zz - up[2]*zy, xy = up[2]*zx - up[0]*zz, xz = up[0]*zy - up[1]*zx;
+      const xl = Math.hypot(xx, xy, xz) || 1; xx/=xl; xy/=xl; xz/=xl;
+      const yx = zy*xz - zz*xy, yy = zz*xx - zx*xz, yz = zx*xy - zy*xx;
+      return new Float32Array([
+        xx, yx, zx, 0, xy, yy, zy, 0, xz, yz, zz, 0,
+        -(xx*e[0]+xy*e[1]+xz*e[2]), -(yx*e[0]+yy*e[1]+yz*e[2]), -(zx*e[0]+zy*e[1]+zz*e[2]), 1]);
+    }
+    function mul(a, b) {
+      const o = new Float32Array(16);
+      for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++)
+        o[c*4+r] = a[r]*b[c*4] + a[4+r]*b[c*4+1] + a[8+r]*b[c*4+2] + a[12+r]*b[c*4+3];
+      return o;
+    }
+    function translate(x, y, z) {
+      const m = new Float32Array(16);
+      m[0] = m[5] = m[10] = m[15] = 1; m[12] = x; m[13] = y; m[14] = z;
+      return m;
+    }
+
+    /* ---------- GLB 解析 ---------- */
+    function parseGLB(ab) {
+      const dv = new DataView(ab);
+      const magic = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
+      if (magic !== 'glTF') throw new Error('not glTF');
+      const jsonLen = dv.getUint32(12, true);
+      const json = JSON.parse(new TextDecoder().decode(new Uint8Array(ab, 20, jsonLen)));
+      const binStart = 28 + jsonLen;
+      const binLen = dv.getUint32(binStart - 8, true);
+      const bin = new Uint8Array(ab, binStart, binLen);
+      const prims = [];
+      const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+      for (const mesh of (json.meshes || [])) for (const prim of (mesh.primitives || [])) {
+        const pa = json.accessors[prim.attributes.POSITION];
+        const na = json.accessors[prim.attributes.NORMAL];
+        const ia = json.accessors[prim.indices];
+        const pbv = json.bufferViews[pa.bufferView], nbv = json.bufferViews[na.bufferView], ibv = json.bufferViews[ia.bufferView];
+        const pos = new Float32Array(bin.buffer, bin.byteOffset + pbv.byteOffset, pa.count * 3);
+        const nor = new Float32Array(bin.buffer, bin.byteOffset + nbv.byteOffset, na.count * 3);
+        const idx = new Uint32Array(bin.buffer, bin.byteOffset + ibv.byteOffset, ia.count);
+        prims.push({ pos, nor, idx, matIdx: prim.material || 0 });
+        for (let i = 0; i < pos.length; i += 3) for (let k = 0; k < 3; k++) {
+          if (pos[i+k] < mn[k]) mn[k] = pos[i+k];
+          if (pos[i+k] > mx[k]) mx[k] = pos[i+k];
+        }
+      }
+      return { prims, min: mn, max: mx };
+    }
+
+    /* ---------- 区块调度（BFS 涟漪） ---------- */
+    const RISE_DUR = 1.15;      // 单区块上浮时长（秒）
+    const STAGGER = 0.42;       // 相邻区块开始延迟（秒）
+    // 调试：慢速回放（?slow=1）—— RISE_DUR×4、STAGGER×3，便于逐帧截取动画
+    if (new URLSearchParams(location.search).get('slow')) { window.__slow = true; }
+    const chunks = [];          // {entry,state,prims,bufs,origin,riseStart,schedAt,fail}
+    let anySuccess = false;
+
+    function adjacent(a, b) {
+      const sepX = Math.max(a.x, b.x) - Math.min(a.x + a.sx, b.x + b.sx);
+      const sepZ = Math.max(a.z, b.z) - Math.min(a.z + a.sz, b.z + b.sz);
+      return sepX <= 1.5 && sepZ <= 1.5;
+    }
+    function scheduleNeighbors(c) {
+      const now = performance.now() / 1000;
+      for (const n of chunks) {
+        if (n.state !== 'pending' || n.scheduled) continue;
+        if (adjacent(c.entry, n.entry)) {
+          n.scheduled = true;
+          n.schedAt = now + STAGGER * (window.__slow ? 3 : 1);
+        }
+      }
+    }
+    // 孤岛救助：无在途/排队区块且仍有待加载时，从已落定区块质心重启涟漪（多点起涟）
+    function maybeReseed() {
+      for (const c of chunks) {
+        if (c.state === 'loading' || c.state === 'rising' || (c.state === 'pending' && c.scheduled)) return;
+      }
+      const pend = chunks.filter(c => c.state === 'pending');
+      if (!pend.length) return;
+      let ax = 0, az = 0, n = 0;
+      for (const c of chunks) if (c.state !== 'pending') {
+        ax += (c.entry.x || 0) + (c.entry.sx || 0) / 2; az += (c.entry.z || 0) + (c.entry.sz || 0) / 2; n++;
+      }
+      if (!n) for (const c of pend) {
+        ax += (c.entry.x || 0) + (c.entry.sx || 0) / 2; az += (c.entry.z || 0) + (c.entry.sz || 0) / 2; n++;
+      }
+      ax /= n; az /= n;
+      let best = pend[0], bd = Infinity;
+      for (const c of pend) {
+        const d = Math.hypot((c.entry.x || 0) + (c.entry.sx || 0) / 2 - ax, (c.entry.z || 0) + (c.entry.sz || 0) / 2 - az);
+        if (d < bd) { bd = d; best = c; }
+      }
+      best.scheduled = true;
+      best.schedAt = performance.now() / 1000;
+    }
+    function startLoad(c) {
+      c.state = 'loading';
+      fetch(c.entry.file)
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+        .then(ab => {
+          const parsed = parseGLB(ab);
+          if (!c.entry.sx) {  // 回退单模型：用解析结果补全尺寸/原点
+            c.entry.x = parsed.min[0]; c.entry.y = parsed.min[1]; c.entry.z = parsed.min[2];
+            c.entry.sx = parsed.max[0] - parsed.min[0]; c.entry.sy = parsed.max[1] - parsed.min[1]; c.entry.sz = parsed.max[2] - parsed.min[2];
+          }
+          c.prims = parsed.prims;
+          c.bufs = parsed.prims.map(p => {
+            const pb = gl.createBuffer(), nb = gl.createBuffer(), ib = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, pb); gl.bufferData(gl.ARRAY_BUFFER, p.pos, gl.STATIC_DRAW);
+            gl.bindBuffer(gl.ARRAY_BUFFER, nb); gl.bufferData(gl.ARRAY_BUFFER, p.nor, gl.STATIC_DRAW);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, p.idx, gl.STATIC_DRAW);
+            return { pb, nb, ib, count: p.idx.length, matIdx: p.matIdx };
+          });
+          c.origin = [c.entry.x, c.entry.y, c.entry.z];
+          c.drop = Math.max(16, c.entry.sy * 0.85);
+          c.state = 'rising';
+          c.riseStart = performance.now() / 1000;
+          anySuccess = true;
+          spawnFX(c);
+          scheduleNeighbors(c);   // 本区块开始上浮 → 相邻区块排队
+          recomputeBounds();
+        })
+        .catch(e => {
+          console.error('[maps] 区块加载失败', c.entry.file, e);
+          c.state = 'failed';
+          scheduleNeighbors(c);   // 失败也要放行邻居，避免孤岛
+          checkAllFailed();
+        });
+    }
+
+    /* ---------- 粒子特效：浅绿/浅粉 线条 + 斑点 ---------- */
+    const GREEN = [0.42, 0.98, 0.60], PINK = [1.0, 0.60, 0.78];
+    function spawnFX(c) {
+      const area = c.entry.sx * c.entry.sz;
+      const n = Math.min(340, Math.max(120, Math.round(area / 8)));
+      const ps = [];
+      for (let i = 0; i < n; i++) {
+        const isLine = Math.random() < 0.68;
+        const col = Math.random() < 0.5 ? GREEN : PINK;
+        const b = 0.95 + Math.random() * 0.45;   // >1 的亮度配合加色混合=发光
+        ps.push({
+          line: isLine,
+          x: c.origin[0] + Math.random() * c.entry.sx,
+          z: c.origin[2] + Math.random() * c.entry.sz,
+          y: c.origin[1] - c.drop * 0.4 + Math.random() * (c.entry.sy + c.drop * 0.5),
+          speed: 4 + Math.random() * 9,
+          len: 2.5 + Math.random() * 5.5,
+          col: [col[0] * b, col[1] * b, col[2] * b],
+          phase: Math.random() * Math.PI * 2,
+          flick: 2 + Math.random() * 4.5,
+          size: 5 + Math.random() * 8,
+        });
+      }
+      c.fx = ps;
+    }
+    function fxEnvelope(c, now) {
+      const t = (now - c.riseStart) / (RISE_DUR * (window.__slow ? 4 : 1));
+      if (t < 0) return 0;
+      if (t < 1) return Math.min(1, t * 3);
+      return Math.max(0, 1 - (t - 1) / 0.7);   // 落定后 0.7s 淡出
+    }
+
+    /* ---------- 相机 / 交互 ---------- */
+    let yaw = 0.75, pitch = 0.5, dist = 100;
+    let target = [0, 0, 0], radius = 30, yMin = 0, yMax = 10;
+    let introT0 = performance.now() / 1000, introOn = true;
+    let lastInteract = -1e9, dragging = false, lastX = 0, lastY = 0, userAdjusted = false;
+
+    function recomputeBounds() {
+      let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+      let any = false;
+      for (const c of chunks) {
+        if (!c.entry.sx) continue;
+        any = true;
+        const e = c.entry;
+        mn[0] = Math.min(mn[0], e.x); mn[1] = Math.min(mn[1], e.y); mn[2] = Math.min(mn[2], e.z);
+        mx[0] = Math.max(mx[0], e.x + e.sx); mx[1] = Math.max(mx[1], e.y + e.sy); mx[2] = Math.max(mx[2], e.z + e.sz);
+      }
+      if (!any) return;
+      target = [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2];
+      radius = Math.max(10, 0.5 * Math.hypot(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]));
+      yMin = mn[1]; yMax = mx[1];
+      if (!userAdjusted) dist = radius * 2.05;   // 用户未动过相机时随边界自适应
+    }
+    canvas.addEventListener('pointerdown', e => {
+      e.preventDefault(); dragging = true; lastX = e.clientX; lastY = e.clientY;
+      canvas.setPointerCapture(e.pointerId); introOn = false; userAdjusted = true;
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (!dragging) return;
+      yaw -= (e.clientX - lastX) * 0.008;
+      pitch = Math.max(-1.45, Math.min(1.45, pitch + (e.clientY - lastY) * 0.008));
+      lastX = e.clientX; lastY = e.clientY; lastInteract = performance.now();
+    });
+    ['pointerup', 'pointercancel'].forEach(ev => canvas.addEventListener(ev, () => { dragging = false; lastInteract = performance.now(); }));
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      dist = Math.max(radius * 0.4, Math.min(radius * 12, dist * Math.exp(e.deltaY * 0.001)));
+      lastInteract = performance.now(); introOn = false; userAdjusted = true;
+    }, { passive: false });
+
+    /* ---------- 渲染循环 ---------- */
+    gl.enable(gl.DEPTH_TEST);
+    gl.disable(gl.CULL_FACE);
+    gl.clearColor(0, 0, 0, 0);
+    const partBuf = gl.createBuffer();
+    let lastT = performance.now() / 1000;
+    const progText = document.getElementById('progText');
+
+    function draw() {
+      const now = performance.now() / 1000;
+      const dt = Math.min(0.05, now - lastT); lastT = now;
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.max(1, canvas.clientWidth * dpr | 0), h = Math.max(1, canvas.clientHeight * dpr | 0);
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      gl.viewport(0, 0, w, h);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      // 调度到点的区块（+ 孤岛重启涟漪）
+      for (const c of chunks) if (c.state === 'pending' && c.scheduled && now >= c.schedAt) startLoad(c);
+      maybeReseed();
+
+      // 相机：入场推近（可被交互打断）
+      let d = dist, p = pitch;
+      if (introOn) {
+        const t = Math.min(1, (now - introT0) / 3.0);
+        const e = 1 - Math.pow(1 - t, 3);
+        d = dist * (1 + 1.15 * (1 - e));
+        p = 0.5 + 0.55 * (1 - e);
+        if (t >= 1) introOn = false;
+      }
+      if (!dragging && now - lastInteract > 4) yaw += 0.0022;
+      const eye = [target[0] + d * Math.cos(p) * Math.sin(yaw), target[1] + d * Math.sin(p), target[2] + d * Math.cos(p) * Math.cos(yaw)];
+      const proj = perspective(0.8, w / h, radius * 0.05, radius * 40);
+      const view = lookAt(eye, target, [0, 1, 0]);
+
+      // ---- 区块网格：不透明 → 透明 ----
+      gl.useProgram(meshProg);
+      gl.uniformMatrix4fv(mLoc.uMVP, false, mul(proj, view));
+      gl.uniform1f(mLoc.uYMin, yMin); gl.uniform1f(mLoc.uYMax, yMax);
+      const ready = chunks.filter(c => c.state === 'rising' || c.state === 'done');
+      function drawChunk(c, matFilter) {
+        const dur = RISE_DUR * (window.__slow ? 4 : 1);
+        let t = c.state === 'done' ? 1 : Math.min(1, (now - c.riseStart) / dur);
+        const tm = t - 1;   // easeOutBack：上浮到位后轻微回弹，落定"对齐"感
+        const ease = 1 + 1.9 * tm * tm * tm + 0.9 * tm * tm;
+        const riseY = -c.drop * (1 - ease);
+        const alpha = Math.min(1, t * 2.2);
+        const off = [c.origin[0], c.origin[1] + riseY, c.origin[2]];
+        gl.uniform3f(mLoc.uOffset, off[0], off[1], off[2]);
+        for (const b of c.bufs) {
+          if (matFilter === 'opaque' ? b.matIdx !== 0 : b.matIdx === 0) continue;
+          const st = MAT_STYLE[b.matIdx] || MAT_STYLE[0];
+          gl.uniform3f(mLoc.uColor, st.color[0], st.color[1], st.color[2]);
+          gl.uniform1f(mLoc.uAlpha, st.alpha * alpha);
+          gl.uniform1f(mLoc.uGrad, st.grad);
+          gl.bindBuffer(gl.ARRAY_BUFFER, b.pb);
+          gl.enableVertexAttribArray(mLoc.aPos); gl.vertexAttribPointer(mLoc.aPos, 3, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, b.nb);
+          gl.enableVertexAttribArray(mLoc.aNor); gl.vertexAttribPointer(mLoc.aNor, 3, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, b.ib);
+          gl.drawElements(gl.TRIANGLES, b.count, gl.UNSIGNED_INT, 0);
+        }
+        if (c.state === 'rising' && t >= 1) c.state = 'done';
+      }
+      gl.disable(gl.BLEND); gl.depthMask(true);
+      for (const c of ready) drawChunk(c, 'opaque');
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+      for (const c of ready) drawChunk(c, 'trans');
+
+      // ---- 粒子（加色混合）：斑点/线条分两批，各一次 drawArrays ----
+      const lineVerts = [], dotVerts = [];
+      for (const c of ready) {
+        if (!c.fx || !c.fx.length) continue;
+        const env = fxEnvelope(c, now);
+        if (env <= 0) { c.fx = null; continue; }
+        const top = c.origin[1] + c.entry.sy + 5, bottom = c.origin[1] - c.drop * 0.45;
+        for (const pt of c.fx) {
+          pt.y += pt.speed * dt;
+          if (pt.y > top) pt.y = bottom;
+          const flick = 0.55 + 0.65 * Math.abs(Math.sin(now * pt.flick + pt.phase));
+          const a = env * flick;
+          if (pt.line) {
+            lineVerts.push(pt.x, pt.y, pt.z, pt.col[0], pt.col[1], pt.col[2], a, 0,
+              pt.x, pt.y - pt.len, pt.z, pt.col[0] * 0.3, pt.col[1] * 0.3, pt.col[2] * 0.3, a * 0.35, 0);
+          } else {
+            dotVerts.push(pt.x, pt.y, pt.z, pt.col[0], pt.col[1], pt.col[2], a, pt.size * dpr);
+          }
+        }
+      }
+      if (lineVerts.length || dotVerts.length) {
+        gl.useProgram(partProg);
+        gl.uniformMatrix4fv(pLoc.uMVP, false, mul(proj, view));
+        const stride = 8 * 4;
+        const bindAndDraw = (arr, mode) => {
+          if (!arr.length) return;
+          gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.DYNAMIC_DRAW);
+          gl.enableVertexAttribArray(pLoc.aPos); gl.vertexAttribPointer(pLoc.aPos, 3, gl.FLOAT, false, stride, 0);
+          gl.enableVertexAttribArray(pLoc.aCol); gl.vertexAttribPointer(pLoc.aCol, 4, gl.FLOAT, false, stride, 12);
+          gl.enableVertexAttribArray(pLoc.aSize); gl.vertexAttribPointer(pLoc.aSize, 1, gl.FLOAT, false, stride, 28);
+          gl.drawArrays(mode, 0, arr.length / 8);
+        };
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);   // 加色发光
+        gl.depthMask(false);
+        gl.disable(gl.DEPTH_TEST);            // 粒子不做深度遮挡：光效穿透结构，能量感
+        bindAndDraw(lineVerts, gl.LINES);
+        bindAndDraw(dotVerts, gl.POINTS);
+        gl.enable(gl.DEPTH_TEST);
+      }
+      gl.depthMask(true); gl.disable(gl.BLEND);
+
+      // 进度文本
+      const doneN = chunks.filter(c => c.state === 'done').length;
+      const total = chunks.length;
+      progText.textContent = total ? `区块 ${doneN}/${total}` : '';
+      requestAnimationFrame(draw);
+    }
+
+    function checkAllFailed() {
+      if (anySuccess) return;
+      if (chunks.every(c => c.state === 'failed')) {
+        document.getElementById('stageEmpty').style.display = 'flex';
+        document.getElementById('stageInfo').style.display = 'none';
+      }
+    }
+
+    /* ---------- 启动 ---------- */
+    (async function init() {
+      if (!gl) {
+        document.getElementById('stageEmpty').style.display = 'flex';
+        return;
+      }
+      let entries = null;
+      try {
+        const r = await fetch('models/chunks/manifest.json');
+        if (r.ok) {
+          const m = JSON.parse(await r.text());
+          if (m && Array.isArray(m.chunks) && m.chunks.length) entries = m.chunks;
+        }
+      } catch (e) { /* 回退 */ }
+      if (!entries) {
+        // 单模型回退（仍带入场动画）
+        entries = [{ file: 'models/city-model.glb' }];
+      }
+      for (const e of entries) chunks.push({ entry: e, state: 'pending', scheduled: false });
+
+      // 起点：最接近全体质心的区块
+      let cx = 0, cz = 0, n = 0;
+      for (const c of chunks) if (c.entry.x !== undefined) { cx += c.entry.x + (c.entry.sx || 0) / 2; cz += c.entry.z + (c.entry.sz || 0) / 2; n++; }
+      let start = chunks[0];
+      if (n > 1) {
+        cx /= n; cz /= n;
+        let best = Infinity;
+        for (const c of chunks) {
+          const d = Math.hypot(c.entry.x + (c.entry.sx || 0) / 2 - cx, c.entry.z + (c.entry.sz || 0) / 2 - cz);
+          if (d < best) { best = d; start = c; }
+        }
+      }
+      start.scheduled = true; start.schedAt = 0;
+      recomputeBounds();
+      dist = radius * 2.05;
+      requestAnimationFrame(draw);
+      // 调试钩子（隔离世界可见的 DOM 数据）
+      setInterval(() => {
+        document.documentElement.setAttribute('data-chunks', chunks.map(c => c.state[0]).join(''));
+      }, 300);
+    })();
+  </script>
+</body>
+</html>
