@@ -177,7 +177,7 @@
       return m;
     }
 
-    /* ---------- GLB 解析 ---------- */
+    /* ---------- GLB 解析（按 mesh 分组，支持单文件多区块） ---------- */
     function parseGLB(ab) {
       const dv = new DataView(ab);
       const magic = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
@@ -187,23 +187,29 @@
       const binStart = 28 + jsonLen;
       const binLen = dv.getUint32(binStart - 8, true);
       const bin = new Uint8Array(ab, binStart, binLen);
-      const prims = [];
-      const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
-      for (const mesh of (json.meshes || [])) for (const prim of (mesh.primitives || [])) {
-        const pa = json.accessors[prim.attributes.POSITION];
-        const na = json.accessors[prim.attributes.NORMAL];
-        const ia = json.accessors[prim.indices];
-        const pbv = json.bufferViews[pa.bufferView], nbv = json.bufferViews[na.bufferView], ibv = json.bufferViews[ia.bufferView];
-        const pos = new Float32Array(bin.buffer, bin.byteOffset + pbv.byteOffset, pa.count * 3);
-        const nor = new Float32Array(bin.buffer, bin.byteOffset + nbv.byteOffset, na.count * 3);
-        const idx = new Uint32Array(bin.buffer, bin.byteOffset + ibv.byteOffset, ia.count);
-        prims.push({ pos, nor, idx, matIdx: prim.material || 0 });
-        for (let i = 0; i < pos.length; i += 3) for (let k = 0; k < 3; k++) {
-          if (pos[i+k] < mn[k]) mn[k] = pos[i+k];
-          if (pos[i+k] > mx[k]) mx[k] = pos[i+k];
+      const meshes = [];
+      const gmn = [Infinity, Infinity, Infinity], gmx = [-Infinity, -Infinity, -Infinity];
+      for (const mesh of (json.meshes || [])) {
+        const prims = [];
+        const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+        for (const prim of (mesh.primitives || [])) {
+          const pa = json.accessors[prim.attributes.POSITION];
+          const na = json.accessors[prim.attributes.NORMAL];
+          const ia = json.accessors[prim.indices];
+          const pbv = json.bufferViews[pa.bufferView], nbv = json.bufferViews[na.bufferView], ibv = json.bufferViews[ia.bufferView];
+          const pos = new Float32Array(bin.buffer, bin.byteOffset + pbv.byteOffset, pa.count * 3);
+          const nor = new Float32Array(bin.buffer, bin.byteOffset + nbv.byteOffset, na.count * 3);
+          const idx = new Uint32Array(bin.buffer, bin.byteOffset + ibv.byteOffset, ia.count);
+          prims.push({ pos, nor, idx, matIdx: prim.material || 0 });
+          for (let i = 0; i < pos.length; i += 3) for (let k = 0; k < 3; k++) {
+            if (pos[i+k] < mn[k]) mn[k] = pos[i+k];
+            if (pos[i+k] > mx[k]) mx[k] = pos[i+k];
+          }
         }
+        meshes.push({ prims, min: mn, max: mx });
+        for (let k = 0; k < 3; k++) { gmn[k] = Math.min(gmn[k], mn[k]); gmx[k] = Math.max(gmx[k], mx[k]); }
       }
-      return { prims, min: mn, max: mx };
+      return { meshes, min: gmn, max: gmx };
     }
 
     /* ---------- 区块调度（BFS 涟漪） ---------- */
@@ -213,6 +219,19 @@
     if (new URLSearchParams(location.search).get('slow')) { window.__slow = true; }
     const chunks = [];          // {entry,state,prims,bufs,origin,riseStart,schedAt,fail}
     let anySuccess = false;
+    // 文件级缓存：打包模式下多个区块共享同一文件，只下载一次
+    // 下载结果走浏览器 HTTP 缓存（Worker 返回 Cache-Control: max-age=3600 + ETag），
+    // 二次访问直接命中缓存秒开；模型更新后 Ctrl+F5 强刷即可绕过
+    const fileCache = {};
+    function loadFile(file) {
+      if (!fileCache[file]) {
+        fileCache[file] = fetch(file)
+          .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+          .then(ab => parseGLB(ab))
+          .catch(e => { delete fileCache[file]; throw e; });   // 失败清缓存允许重试
+      }
+      return fileCache[file];
+    }
 
     function adjacent(a, b) {
       const sepX = Math.max(a.x, b.x) - Math.min(a.x + a.sx, b.x + b.sx);
@@ -254,31 +273,46 @@
     }
     function startLoad(c) {
       c.state = 'loading';
-      fetch(c.entry.file)
-        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
-        .then(ab => {
-          const parsed = parseGLB(ab);
-          if (!c.entry.sx) {  // 回退单模型：用解析结果补全尺寸/原点
+      const finish = (parsed) => {
+        let prims = c.prims;
+        if (!prims) {
+          if (c.entry.meshFrom !== undefined) {   // 打包模式：切出本区块的 mesh 段
+            prims = [];
+            const cnt = c.entry.meshCount || 1;
+            for (let mi = c.entry.meshFrom; mi < c.entry.meshFrom + cnt; mi++) {
+              const g = parsed.meshes[mi];
+              if (g) prims.push.apply(prims, g.prims);
+            }
+          } else if (!c.entry.sx) {  // 回退单模型：用解析结果补全尺寸/原点
             c.entry.x = parsed.min[0]; c.entry.y = parsed.min[1]; c.entry.z = parsed.min[2];
             c.entry.sx = parsed.max[0] - parsed.min[0]; c.entry.sy = parsed.max[1] - parsed.min[1]; c.entry.sz = parsed.max[2] - parsed.min[2];
+            prims = [];
+            for (const g of (parsed.meshes || [])) prims.push.apply(prims, g.prims);
+          } else {   // per 模式：独立文件（可能是多材质 mesh）取全部
+            prims = [];
+            for (const g of (parsed.meshes || [])) prims.push.apply(prims, g.prims);
           }
-          c.prims = parsed.prims;
-          c.bufs = parsed.prims.map(p => {
-            const pb = gl.createBuffer(), nb = gl.createBuffer(), ib = gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, pb); gl.bufferData(gl.ARRAY_BUFFER, p.pos, gl.STATIC_DRAW);
-            gl.bindBuffer(gl.ARRAY_BUFFER, nb); gl.bufferData(gl.ARRAY_BUFFER, p.nor, gl.STATIC_DRAW);
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, p.idx, gl.STATIC_DRAW);
-            return { pb, nb, ib, count: p.idx.length, matIdx: p.matIdx };
-          });
-          c.origin = [c.entry.x, c.entry.y, c.entry.z];
-          c.drop = Math.max(16, c.entry.sy * 0.85);
-          c.state = 'rising';
-          c.riseStart = performance.now() / 1000;
-          anySuccess = true;
-          spawnFX(c);
-          scheduleNeighbors(c);   // 本区块开始上浮 → 相邻区块排队
-          recomputeBounds();
-        })
+          c.prims = prims;
+        }
+        c.bufs = prims.map(p => {
+          const pb = gl.createBuffer(), nb = gl.createBuffer(), ib = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, pb); gl.bufferData(gl.ARRAY_BUFFER, p.pos, gl.STATIC_DRAW);
+          gl.bindBuffer(gl.ARRAY_BUFFER, nb); gl.bufferData(gl.ARRAY_BUFFER, p.nor, gl.STATIC_DRAW);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, p.idx, gl.STATIC_DRAW);
+          return { pb, nb, ib, count: p.idx.length, matIdx: p.matIdx };
+        });
+        c.origin = [c.entry.x, c.entry.y, c.entry.z];
+        c.drop = Math.max(16, c.entry.sy * 0.85);
+        c.state = 'rising';
+        c.riseStart = performance.now() / 1000;
+        anySuccess = true;
+        spawnFX(c);
+        scheduleNeighbors(c);   // 本区块开始上浮 → 相邻区块排队
+        recomputeBounds();
+      };
+      if (c.prims) { finish(); return; }   // 已预绑定 mesh 数据
+      loadFile(c.entry.file)
+        .then(finish)
         .catch(e => {
           console.error('[maps] 区块加载失败', c.entry.file, e);
           c.state = 'failed';
@@ -492,17 +526,22 @@
       }
       let entries = null;
       try {
-        const r = await fetch('models/chunks/manifest.json');
+        const r = await fetch('models/chunks/manifest.json', { cache: 'no-cache' });
         if (r.ok) {
           const m = JSON.parse(await r.text());
-          if (m && Array.isArray(m.chunks) && m.chunks.length) entries = m.chunks;
+          if (m && Array.isArray(m.chunks) && m.chunks.length) {
+            entries = m.chunks;
+            // 不做整包预加载：交给 startLoad 按 BFS 边下载边上浮（fileCache 保证共享文件只下载一次）
+          }
         }
       } catch (e) { /* 回退 */ }
       if (!entries) {
         // 单模型回退（仍带入场动画）
         entries = [{ file: 'models/city-model.glb' }];
       }
-      for (const e of entries) chunks.push({ entry: e, state: 'pending', scheduled: false });
+      for (const e of entries) {
+        chunks.push({ entry: e, state: 'pending', scheduled: false });
+      }
 
       // 起点：最接近全体质心的区块
       let cx = 0, cz = 0, n = 0;
