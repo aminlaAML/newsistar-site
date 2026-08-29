@@ -97,8 +97,8 @@
     /* ================= 全屏多区块渐进加载沙盘 =================
        manifest（models/chunks/manifest.json）：
        { "chunks": [ {"file":"chunk_x_z.glb","x":世界X,"y":世界Y,"z":世界Z,"sx":..,"sy":..,"sz":..}, ... ] }
-       加载策略：从最接近全体质心的区块开始 BFS——本区块开始上浮时调度相邻区块，
-       相邻再调度相邻，涟漪式铺满全图。无 manifest 时回退单模型 city-model.glb。 */
+       加载策略：涟漪波次——种子区块先上浮，其四邻整波同时上浮，连锁推进下一波，
+      一波一波铺满全图。无 manifest 时回退单模型 city-model.glb。 */
     'use strict';
 
     const canvas = document.getElementById('glcanvas');
@@ -256,12 +256,13 @@
       return { meshes, min: gmn, max: gmx };
     }
 
-    /* ---------- 区块调度（BFS 涟漪） ---------- */
+    /* ---------- 区块调度（涟漪波次：一波同时上浮，连锁推进） ---------- */
     const RISE_DUR = 1.15;      // 单区块上浮时长（秒）
-    const STAGGER = 0.42;       // 相邻区块开始延迟（秒）
-    // 调试：慢速回放（?slow=1）—— RISE_DUR×4、STAGGER×3，便于逐帧截取动画
+    const WAVE_DELAY = 0.3;     // 一波全部开始上浮 → 下一波整波启动的连锁延迟（秒）
+    // 调试：慢速回放（?slow=1）—— RISE_DUR×4、WAVE_DELAY×3，便于逐帧截取动画
     if (new URLSearchParams(location.search).get('slow')) { window.__slow = true; }
-    const chunks = [];          // {entry,state,prims,bufs,origin,riseStart,schedAt,fail}
+    const chunks = [];          // {entry,state,prims,bufs,origin,riseStart,schedAt,waveIdx}
+    const waves = [];           // waves[i] = 第 i 波区块数组；本波全部上浮后触发下一波
     let anySuccess = false;
     // 文件级缓存：打包模式下多个区块共享同一文件，只下载一次
     // 下载结果走浏览器 HTTP 缓存（Worker 返回 Cache-Control: max-age=3600 + ETag），
@@ -282,14 +283,30 @@
       const sepZ = Math.max(a.z, b.z) - Math.min(a.z + a.sz, b.z + b.sz);
       return sepX <= 1.5 && sepZ <= 1.5;
     }
-    function scheduleNeighbors(c) {
-      const now = performance.now() / 1000;
-      for (const n of chunks) {
-        if (n.state !== 'pending' || n.scheduled) continue;
-        if (adjacent(c.entry, n.entry)) {
-          n.scheduled = true;
-          n.schedAt = now + STAGGER * (window.__slow ? 3 : 1);
-        }
+    // 波次划分：从种子 BFS——第 0 波=种子自己，第 d 波=紧邻第 d-1 波的所有区块
+    function buildWaves(seed, pool) {
+      seed.waveIdx = waves.length;
+      let cur = [seed];
+      waves.push(cur);
+      for (;;) {
+        const next = pool.filter(c => c.waveIdx === undefined && cur.some(p => adjacent(p.entry, c.entry)));
+        if (!next.length) break;
+        for (const c of next) c.waveIdx = waves.length;
+        waves.push(next);
+        cur = next;
+      }
+    }
+    // 连锁推进：本波全部开始上浮（或加载失败）后，下一波整波同一时刻排队
+    function checkWaveAdvance(c) {
+      const w = waves[c.waveIdx];
+      if (!w) return;
+      const begun = x => x.state === 'rising' || x.state === 'done' || x.state === 'failed';
+      if (!w.every(begun)) return;              // 本波还有区块没动，等它
+      const next = waves[c.waveIdx + 1];
+      if (!next) return;
+      const t = performance.now() / 1000 + WAVE_DELAY * (window.__slow ? 3 : 1);
+      for (const n of next) {
+        if (n.state === 'pending' && !n.scheduled) { n.scheduled = true; n.schedAt = t; }
       }
     }
     // 孤岛救助：无在途/排队区块且仍有待加载时，从已落定区块质心重启涟漪（多点起涟）
@@ -305,7 +322,7 @@
         c.schedAt = performance.now() / 1000;
         return;
       }
-      const pend = chunks.filter(c => c.state === 'pending');
+      const pend = chunks.filter(c => c.state === 'pending' && c.waveIdx === undefined);
       if (!pend.length) return;
       let ax = 0, az = 0, n = 0;
       for (const c of chunks) if (c.state !== 'pending') {
@@ -320,6 +337,8 @@
         const d = Math.hypot((c.entry.x || 0) + (c.entry.sx || 0) / 2 - ax, (c.entry.z || 0) + (c.entry.sz || 0) / 2 - az);
         if (d < bd) { bd = d; best = c; }
       }
+      // 从最近的未波及区块起新涟漪：重新分波，立刻启动，连锁继续
+      buildWaves(best, pend);
       best.scheduled = true;
       best.schedAt = performance.now() / 1000;
     }
@@ -359,7 +378,7 @@
         c.riseStart = performance.now() / 1000;
         anySuccess = true;
         spawnFX(c);
-        scheduleNeighbors(c);   // 本区块开始上浮 → 相邻区块排队
+        checkWaveAdvance(c);    // 本区块开始上浮 → 本波若已全部启动，连锁下一波
         recomputeBounds();
       };
       if (c.prims) { finish(); return; }   // 已预绑定 mesh 数据
@@ -369,7 +388,7 @@
           console.error('[maps] 区块加载失败', c.entry.file, e);
           c.retries = (c.retries || 0) + 1;
           c.state = 'failed';
-          scheduleNeighbors(c);   // 失败也要放行邻居，避免孤岛
+          checkWaveAdvance(c);    // 失败也算本波启动完成，放行下一波，避免卡链
           checkAllFailed();
         });
     }
@@ -419,6 +438,27 @@
         });
       }
       c.fx = ps;
+      // 随机生成线（取代固定十字线）：区块范围内随机位置/朝向的绿粉光线，上升时浮现
+      const sl = [];
+      const nL = 5 + (Math.random() * 4 | 0);   // 每区块 5~8 条
+      for (let i = 0; i < nL; i++) {
+        const x = c.origin[0] + Math.random() * (c.entry.sx || 16);
+        const z = c.origin[2] + Math.random() * (c.entry.sz || 16);
+        const y = c.origin[1] + (c.entry.sy || 16) * (0.2 + Math.random() * 0.72);
+        const len = 4 + Math.random() * 10;
+        const ang = Math.random() * Math.PI;                       // 水平面内随机朝向
+        const pitch = (Math.random() - 0.5) * 0.8;                 // 随机俯仰
+        sl.push({
+          x1: x, y1: y, z1: z,
+          x2: x + Math.cos(ang) * len,
+          y2: y + pitch * len,
+          z2: z + Math.sin(ang) * len,
+          col: Math.random() < 0.55 ? GREEN : PINK,
+          phase: Math.random() * Math.PI * 2,
+          flick: 2.5 + Math.random() * 5,
+        });
+      }
+      c.scanLines = sl;
     }
     function fxEnvelope(c, now) {
       // 强度包络：0.1 内快速显现 → 全程保持 1（消退由着色器扫描线逐层完成）→ 落定归零
@@ -553,16 +593,13 @@
         const env = fxEnvelope(c, now);
         if (env <= 0) { c.fx = null; continue; }
         const riseY = chunkRise(c);   // 与模型同步的上升偏移
-        // 科技扫描十字线：模型上升时在顶部画冷青发光扫描线（随模型上浮，褪去期同步淡出）
-        if (c.state === 'rising') {
-          const scanY = c.origin[1] + riseY + c.entry.sy * 0.96;
-          const cx = c.origin[0] + c.entry.sx / 2, cz = c.origin[2] + c.entry.sz / 2;
-          const a = env * 0.9;
-          const sc = [0.55, 0.95, 1.0];
-          lineVerts.push(c.origin[0], scanY, cz, sc[0], sc[1], sc[2], a, 0,
-            c.origin[0] + c.entry.sx, scanY, cz, sc[0], sc[1], sc[2], a * 0.45, 0);
-          lineVerts.push(cx, scanY, c.origin[2], sc[0], sc[1], sc[2], a, 0,
-            cx, scanY, c.origin[2] + c.entry.sz, sc[0], sc[1], sc[2], a * 0.45, 0);
+        // 随机生成线：区块上升时表面浮现随机方向/位置的绿粉光线（随模型上浮，逐条闪烁）
+        if (c.state === 'rising' && c.scanLines) {
+          for (const L of c.scanLines) {
+            const a = env * 0.9 * (0.55 + 0.45 * Math.abs(Math.sin(now * L.flick + L.phase)));
+            lineVerts.push(L.x1, L.y1 + riseY, L.z1, L.col[0], L.col[1], L.col[2], a, 0,
+              L.x2, L.y2 + riseY, L.z2, L.col[0] * 0.3, L.col[1] * 0.3, L.col[2] * 0.3, a * 0.35, 0);
+          }
         }
         for (const pt of c.fx) {
           pt.y += pt.speed * dt;
@@ -653,6 +690,7 @@
           if (d < best) { best = d; start = c; }
         }
       }
+      buildWaves(start, chunks);   // 波次划分：种子=第 0 波，四邻=第 1 波，逐波外扩
       start.scheduled = true; start.schedAt = 0;
       recomputeBounds();
       dist = radius * 2.05;
