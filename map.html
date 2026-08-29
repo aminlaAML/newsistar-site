@@ -164,7 +164,7 @@
       'void main(){ vec3 p = aPos + uOffset; gl_Position = uMVP * vec4(p, 1.0); vNor = aNor; vW = p; }';
     const meshFS = 'precision mediump float; varying vec3 vNor; varying vec3 vW;' +
       'uniform vec3 uColor; uniform float uAlpha, uGrad, uYMin, uYMax;' +
-      'uniform float uSeaLevel, uSeaFade, uSeaCx, uSeaCz;' +
+      'uniform float uSeaLevel;' +
       'void main(){' +
       ' vec3 N = normalize(vNor); if(!gl_FrontFacing) N = -N;' +
       ' float d1 = max(dot(N, normalize(vec3(0.4,0.8,0.55))), 0.0);' +
@@ -178,10 +178,7 @@
       '   float under = clamp((uSeaLevel - vW.y) / 50.0, 0.0, 1.0);' +
       '   col = mix(col, vec3(0.10, 0.28, 0.50), under * 0.9);' +
       ' }' +
-      // 海面模式（uSeaFade>0）：离中心越远 alpha 越低，边缘径向淡出融入背景
-      ' float aOut = uAlpha;' +
-      ' if (uSeaFade > 0.0) { aOut *= 1.0 - smoothstep(0.55, 0.98, length(vW.xz - vec2(uSeaCx, uSeaCz)) / uSeaFade); }' +
-      ' gl_FragColor = vec4(col, aOut); }';
+      ' gl_FragColor = vec4(col, uAlpha); }';
 
     const meshProg = gl.createProgram();
     gl.attachShader(meshProg, sh(gl.VERTEX_SHADER, meshVS));
@@ -195,7 +192,6 @@
       uGrad: gl.getUniformLocation(meshProg, 'uGrad'), uYMin: gl.getUniformLocation(meshProg, 'uYMin'),
       uYMax: gl.getUniformLocation(meshProg, 'uYMax'),
       uSeaLevel: gl.getUniformLocation(meshProg, 'uSeaLevel'),
-      uSeaFade: gl.getUniformLocation(meshProg, 'uSeaFade'), uSeaCx: gl.getUniformLocation(meshProg, 'uSeaCx'), uSeaCz: gl.getUniformLocation(meshProg, 'uSeaCz'),
     };
     const MAT_STYLE = [
       { color: [1.0, 1.0, 1.0], alpha: 1.0, grad: 1 },     // 实心白模
@@ -473,9 +469,9 @@
     }
 
     /* ---------- 相机 / 交互：固定仰角球面相机 ----------
-       以中心区块海平面为球心的虚拟球体，摄像机锁定球面 70° 仰角：
+       以中心区块海平面为球心的虚拟球体，摄像机锁定球面 45° 仰角：
        左键滑动 = 沿球面移动（方位角），右键滑动 = 转向（视线偏航/俯仰），滚轮 = 缩放（球半径） */
-    const CAM_ELEV = 70 * Math.PI / 180;   // 固定仰角 70°
+    const CAM_ELEV = 45 * Math.PI / 180;   // 固定仰角 45°
     let camYaw = 0.75, dist = 100;
     let lookYaw = 0, lookPitch = 0;        // 右键转向的视线偏移
     let camCenter = [0, 0, 0], sceneRadius = 30, yMin = 0, yMax = 10;
@@ -486,11 +482,12 @@
     function rotX(a) { const c = Math.cos(a), s = Math.sin(a), m = new Float32Array(16); m[0] = 1; m[5] = c; m[6] = s; m[9] = -s; m[10] = c; m[15] = 1; return m; }
     function rotY(a) { const c = Math.cos(a), s = Math.sin(a), m = new Float32Array(16); m[0] = c; m[2] = -s; m[5] = 1; m[8] = s; m[10] = c; m[15] = 1; return m; }
 
-    // 海平面：以场景中心为心的大水面（半透明浅蓝，uOffset 平移到海平面高度）
+    // 海平面：无边界纯水平面——尺寸远超远裁剪面(far=40R)，四条边全被裁掉，
+    // 任何缩放/视角下海都直接连到地平线，看不到边界（quad 仍是 2 三角形，无性能开销）
     // 海面高出基座底 2 格（浸水观感）：落定后城市像坐在海里，且与区块底面(y=seaLevel)不共面无 z-fighting
     const SEA_SURF = 2;
     function buildSeaQuad() {
-      const S = Math.max(80, sceneRadius * 3.2);
+      const S = Math.max(240, sceneRadius * 60);
       if (!seaBuf) seaBuf = { pb: gl.createBuffer(), nb: gl.createBuffer(), ib: gl.createBuffer(), count: 6 };
       gl.bindBuffer(gl.ARRAY_BUFFER, seaBuf.pb);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-S, 0, -S, S, 0, -S, S, 0, S, -S, 0, S]), gl.STATIC_DRAW);
@@ -499,7 +496,6 @@
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, seaBuf.ib);
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array([0, 2, 1, 0, 3, 2]), gl.STATIC_DRAW);
       seaBuf.off = [camCenter[0], seaLevel + SEA_SURF, camCenter[2]];
-      seaBuf.S = S;
     }
     function recomputeBounds() {
       let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
@@ -531,7 +527,7 @@
       if (dragBtn === 2) {   // 右键：转向（视线偏航 + 俯仰）
         lookYaw -= dx * 0.004;
         lookPitch = Math.max(-0.55, Math.min(0.5, lookPitch - dy * 0.003));
-      } else {               // 左键：沿球面移动（方位角，仰角固定 70°）
+      } else {               // 左键：沿球面移动（方位角，仰角固定 45°）
         camYaw -= dx * 0.006;
       }
       lastX = e.clientX; lastY = e.clientY; lastInteract = performance.now();
@@ -567,7 +563,7 @@
       for (const c of active) if (c.state === 'pending' && c.scheduled && now >= c.schedAt) startLoad(c);
       maybeReseed();
 
-      // 相机：固定仰角 70° 球面 + 入场推近（可被交互打断）
+      // 相机：固定仰角 45° 球面 + 入场推近（可被交互打断）
       let d = dist;
       if (introOn) {
         const t = Math.min(1, (now - introT0) / 2.6);
@@ -585,7 +581,6 @@
 
       // ---- 区块网格：不透明 → 透明 ----
       gl.useProgram(meshProg);
-      gl.uniform1f(mLoc.uSeaFade, 0);   // 区块不启用海面径向淡出
       gl.uniformMatrix4fv(mLoc.uMVP, false, mul(proj, view));
       gl.uniform1f(mLoc.uYMin, yMin); gl.uniform1f(mLoc.uYMax, yMax);
       const ready = active.filter(c => c.state === 'rising' || c.state === 'done');
@@ -621,7 +616,7 @@
       }
       gl.disable(gl.BLEND); gl.depthMask(true);
       for (const c of ready) drawChunk(c, 'opaque');
-      // ---- 海平面：城市基座下的浅蓝水面（每城独立配置色/透明度，边缘径向淡出） ----
+      // ---- 海平面：无边界纯水面（每城独立配置色/透明度），铺满视野直达地平线 ----
       if (seaBuf) {
         const curSea = (SCENES[sceneIdx] || SCENES[0]).sea;
         gl.uniform3f(mLoc.uOffset, seaBuf.off[0], seaBuf.off[1], seaBuf.off[2]);
@@ -629,8 +624,6 @@
         gl.uniform1f(mLoc.uAlpha, curSea.alpha);
         gl.uniform1f(mLoc.uGrad, 0);
         gl.uniform1f(mLoc.uSeaLevel, -10000);   // 海面自身不做水下渐隐
-        gl.uniform1f(mLoc.uSeaFade, seaBuf.S || 0);
-        gl.uniform1f(mLoc.uSeaCx, camCenter[0]); gl.uniform1f(mLoc.uSeaCz, camCenter[2]);
         gl.disable(gl.CULL_FACE);
         gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
         gl.bindBuffer(gl.ARRAY_BUFFER, seaBuf.pb);
@@ -640,7 +633,6 @@
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, seaBuf.ib);
         gl.drawElements(gl.TRIANGLES, seaBuf.count, gl.UNSIGNED_INT, 0);
         gl.enable(gl.CULL_FACE);
-        gl.uniform1f(mLoc.uSeaFade, 0);   // 恢复：后续玻璃 pass 不淡出
       }
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
       for (const c of ready) drawChunk(c, 'trans');
