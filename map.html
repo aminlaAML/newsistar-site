@@ -55,6 +55,44 @@
     .stage-empty .se-mark { font-size: 2.2rem; color: var(--primary-light); margin-bottom: 22px; text-shadow: 0 0 26px rgba(127,168,212,.55); }
     .stage-empty .se-t { font-size: 1.06rem; color: var(--text-2); letter-spacing: .3em; font-weight: 700; }
     .stage-empty .se-s { font-size: .82rem; color: var(--text-muted); margin-top: 12px; letter-spacing: .12em; }
+    /* 左侧城市拉取栏：竖排把手 + 滑出面板（方舟战术风） */
+    .city-rail { position: fixed; left: 0; top: 50%; z-index: 110; transform: translateY(-50%); }
+    .city-handle {
+      position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+      writing-mode: vertical-rl; text-orientation: upright;
+      padding: 22px 9px; background: rgba(8, 11, 17, 0.72); color: var(--text-2);
+      border: 1px solid rgba(148, 163, 190, 0.22); border-left: none;
+      border-radius: 0 4px 4px 0; cursor: pointer; letter-spacing: .34em;
+      font-size: .82rem; font-family: ui-monospace, SFMono-Regular, monospace;
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      transition: left .32s cubic-bezier(.4, 0, .2, 1), color .18s;
+    }
+    .city-handle:hover { color: var(--text); }
+    .city-rail.open .city-handle { left: 172px; color: var(--primary-light); }
+    .city-panel {
+      position: absolute; left: 0; top: 50%; transform: translate(-102%, -50%);
+      width: 172px; max-height: 62vh; overflow-y: auto;
+      background: rgba(8, 11, 17, 0.82); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(148, 163, 190, 0.22); border-radius: 0 4px 4px 0;
+      transition: transform .32s cubic-bezier(.4, 0, .2, 1);
+    }
+    .city-rail.open .city-panel { transform: translate(0, -50%); }
+    .city-title {
+      padding: 12px 16px; font-size: .74rem; color: var(--primary-light);
+      letter-spacing: .22em; font-family: ui-monospace, SFMono-Regular, monospace;
+      border-bottom: 1px solid rgba(148, 163, 190, 0.16);
+    }
+    .city-item {
+      display: block; width: 100%; text-align: left; padding: 11px 16px;
+      background: none; border: none; border-bottom: 1px solid rgba(148, 163, 190, 0.08);
+      color: var(--text-2); cursor: pointer; letter-spacing: .12em; font-size: .84rem;
+      font-family: ui-monospace, SFMono-Regular, monospace; transition: background .18s, color .18s;
+    }
+    .city-item:hover { color: var(--text); background: rgba(127, 168, 212, 0.10); }
+    .city-item.active {
+      color: #fff; background: linear-gradient(90deg, rgba(127, 168, 212, 0.20), transparent);
+      box-shadow: inset 2px 0 0 var(--primary-light);
+    }
   </style>
   <link rel="stylesheet" href="assets/css/ark-ui.css">
 </head>
@@ -88,8 +126,17 @@
 
   <div class="stage-info" id="stageInfo">
     <b>新汐斯塔城市沙盘</b><br>
+    <span class="prog" id="sceneName">全图</span><br>
     <span class="prog" id="progText">区块 0/0</span><br>
-    拖拽旋转 · 滚轮缩放 · 闲置自动巡览
+    左键移动 · 右键转向 · 滚轮缩放
+  </div>
+
+  <!-- 左侧城市拉取栏：点击"城市"拉出，上下滑动选择城市场景 -->
+  <div class="city-rail" id="cityRail">
+    <div class="city-panel" id="cityPanel">
+      <div class="city-title">◆ 城市列表</div>
+    </div>
+    <button class="city-handle" id="cityHandle">城市</button>
   </div>
 
   <script src="assets/js/main.js?v=2"></script>
@@ -112,13 +159,12 @@
       return s;
     }
     // 建筑网格：白模高度渐变 / 玻璃 / 水（与转换工具一致的观感）
-    // uFx=uSxPhase 期间模型表面直接渲染绿粉科技纹样（格子分区+向下流动扫描光带），随上升褪去
     const meshVS = 'attribute vec3 aPos; attribute vec3 aNor; uniform mat4 uMVP; uniform vec3 uOffset;' +
       'varying vec3 vNor; varying vec3 vW;' +
       'void main(){ vec3 p = aPos + uOffset; gl_Position = uMVP * vec4(p, 1.0); vNor = aNor; vW = p; }';
     const meshFS = 'precision mediump float; varying vec3 vNor; varying vec3 vW;' +
-      'uniform vec3 uColor; uniform float uAlpha, uGrad, uYMin, uYMax, uFx, uFxPhase;' +
-      'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }' +
+      'uniform vec3 uColor; uniform float uAlpha, uGrad, uYMin, uYMax;' +
+      'uniform float uSeaLevel, uSeaFade, uSeaCx, uSeaCz;' +
       'void main(){' +
       ' vec3 N = normalize(vNor); if(!gl_FrontFacing) N = -N;' +
       ' float d1 = max(dot(N, normalize(vec3(0.4,0.8,0.55))), 0.0);' +
@@ -127,53 +173,20 @@
       ' vec3 grad = mix(vec3(0.88,0.92,0.98), vec3(1.0), t);' +
       ' vec3 base = mix(uColor, grad, uGrad);' +
       ' vec3 col = base * (0.52 + 0.44*d1 + 0.18*d2);' +
-      // ==== 绿粉构建特效：纯色块为主 + 线条斑点点缀 ====
-      // 扫描线从模型顶(1.0)随进度降到(0.0)：线以上的部分已构建完成→褪为白模，
-      // 线以下仍在构建→绿粉纯色。颜色从上往下逐层排空，不是整体消退
-      ' if (uFx > 0.001) {' +
-      '   float buildLine = 1.0 - uFxPhase;' +
-      '   float hNorm = clamp((vW.y - uYMin) / max(uYMax - uYMin, 1.0), 0.0, 1.0);' +
-      //   构建中 = 扫描线以下（hNorm < buildLine）
-      '   float building = smoothstep(buildLine + 0.06, buildLine - 0.06, hNorm);' +
-      //   大格子纯色块（32 格宽）：绿/粉随机分区，整块纯色
-      '   vec3 cell3 = floor(vW * 0.03125);' +
-      '   float h = hash(cell3.xy + cell3.z * 7.31);' +
-      '   vec3 fxCol = mix(vec3(0.42, 0.98, 0.60), vec3(1.0, 0.50, 0.92), step(0.5, h));' +
-      //   纯色覆盖（构建中的部分）：块面 90% 强度
-      '   vec3 solid = fxCol * 0.85;' +
-      //   线条：大格边线提亮（勾出块的结构）
-      '   vec3 gf = abs(fract(vW * 0.03125) - 0.5);' +
-      '   float edge = 1.0 - smoothstep(0.0, 0.08, min(min(gf.x, gf.y), gf.z));' +
-      '   solid = mix(solid, fxCol * 1.4, edge * 0.8);' +
-      //   斑点：稀疏 hash 亮斑（每 8 格一个小亮点）
-      '   vec3 spot3 = floor(vW * 0.125);' +
-      '   float spot = step(0.93, hash(spot3.xy + spot3.z * 3.7));' +
-      '   solid = mix(solid, vec3(1.3), spot * 0.9);' +
-      //   构建边界光带：扫描线本身高亮渐变
-      '   float bandGlow = smoothstep(0.10, 0.0, abs(hNorm - buildLine));' +
-      '   vec3 bandCol = vec3(0.75, 0.97, 1.0);' +
-      '   vec3 fx = mix(solid, bandCol * 1.3, bandGlow * 0.85);' +
-      //   应用：构建中(building=1)全特效，已构建(building=0)白模
-      '   col = mix(col, fx, uFx * building);' +
+      // 水下渐隐：海平面以下越深颜色越趋近深海水色（区块从海平面下升起，水下部分呈海水色）
+      ' if (uSeaLevel > -9000.0) {' +
+      '   float under = clamp((uSeaLevel - vW.y) / 50.0, 0.0, 1.0);' +
+      '   col = mix(col, vec3(0.10, 0.28, 0.50), under * 0.9);' +
       ' }' +
-      ' gl_FragColor = vec4(col, uAlpha); }';
-    // 粒子：加色混合的绿/粉线条与光点
-    const partVS = 'attribute vec3 aPos; attribute vec4 aCol; attribute float aSize;' +
-      'uniform mat4 uMVP; varying vec4 vCol;' +
-      'void main(){ gl_Position = uMVP * vec4(aPos, 1.0); vCol = aCol; gl_PointSize = aSize; }';
-    const partFS = 'precision mediump float; varying vec4 vCol;' +
-      'void main(){ vec2 d = gl_PointCoord - 0.5; float r = length(d);' +
-      ' if(r > 0.5) discard; float a = smoothstep(0.5, 0.05, r);' +
-      ' gl_FragColor = vec4(vCol.rgb, vCol.a * a); }';
+      // 海面模式（uSeaFade>0）：离中心越远 alpha 越低，边缘径向淡出融入背景
+      ' float aOut = uAlpha;' +
+      ' if (uSeaFade > 0.0) { aOut *= 1.0 - smoothstep(0.55, 0.98, length(vW.xz - vec2(uSeaCx, uSeaCz)) / uSeaFade); }' +
+      ' gl_FragColor = vec4(col, aOut); }';
 
     const meshProg = gl.createProgram();
     gl.attachShader(meshProg, sh(gl.VERTEX_SHADER, meshVS));
     gl.attachShader(meshProg, sh(gl.FRAGMENT_SHADER, meshFS));
     gl.linkProgram(meshProg);
-    const partProg = gl.createProgram();
-    gl.attachShader(partProg, sh(gl.VERTEX_SHADER, partVS));
-    gl.attachShader(partProg, sh(gl.FRAGMENT_SHADER, partFS));
-    gl.linkProgram(partProg);
 
     const mLoc = {
       aPos: gl.getAttribLocation(meshProg, 'aPos'), aNor: gl.getAttribLocation(meshProg, 'aNor'),
@@ -181,16 +194,13 @@
       uColor: gl.getUniformLocation(meshProg, 'uColor'), uAlpha: gl.getUniformLocation(meshProg, 'uAlpha'),
       uGrad: gl.getUniformLocation(meshProg, 'uGrad'), uYMin: gl.getUniformLocation(meshProg, 'uYMin'),
       uYMax: gl.getUniformLocation(meshProg, 'uYMax'),
-      uFx: gl.getUniformLocation(meshProg, 'uFx'), uFxPhase: gl.getUniformLocation(meshProg, 'uFxPhase'),
-    };
-    const pLoc = {
-      aPos: gl.getAttribLocation(partProg, 'aPos'), aCol: gl.getAttribLocation(partProg, 'aCol'),
-      aSize: gl.getAttribLocation(partProg, 'aSize'), uMVP: gl.getUniformLocation(partProg, 'uMVP'),
+      uSeaLevel: gl.getUniformLocation(meshProg, 'uSeaLevel'),
+      uSeaFade: gl.getUniformLocation(meshProg, 'uSeaFade'), uSeaCx: gl.getUniformLocation(meshProg, 'uSeaCx'), uSeaCz: gl.getUniformLocation(meshProg, 'uSeaCz'),
     };
     const MAT_STYLE = [
-      { color: [1.0, 1.0, 1.0], alpha: 1.0, grad: 1 },
-      { color: [0.94, 0.97, 1.0], alpha: 0.30, grad: 0 },
-      { color: [0.46, 0.74, 0.98], alpha: 0.75, grad: 0 },
+      { color: [1.0, 1.0, 1.0], alpha: 1.0, grad: 1 },     // 实心白模
+      { color: [0.94, 0.97, 1.0], alpha: 0.30, grad: 0 },   // 玻璃（半透明）
+      { color: [0.58, 0.80, 0.98], alpha: 1.0, grad: 0 },   // 水：浅蓝不透明方块
     ];
 
     /* ---------- mat4（列主序） ---------- */
@@ -264,6 +274,17 @@
     const chunks = [];          // {entry,state,prims,bufs,origin,riseStart,schedAt,waveIdx}
     const waves = [];           // waves[i] = 第 i 波区块数组；本波全部上浮后触发下一波
     let anySuccess = false;
+    /* ---------- 场景配置：每个城市独立配置（区块范围 + 海平面），改数值即可重新绑定 ----------
+       sea.level=null → 自动取最低区块基座；每城可独立配置海平面高度/颜色/透明度 */
+    const SCENES = [
+      { name: '全图',   x: [0, 208],   z: [0, 288], sea: { level: null, color: [0.38, 0.64, 0.94], alpha: 0.55 } },
+      { name: '闽州',   x: [0, 104],   z: [0, 288], sea: { level: null, color: [0.38, 0.64, 0.94], alpha: 0.55 } },
+      { name: '潮汐城', x: [104, 208], z: [0, 288], sea: { level: null, color: [0.30, 0.62, 0.86], alpha: 0.55 } },
+    ];
+    let sceneIdx = 0, sceneName = '全图';
+    let active = [];            // 当前场景的区块（其他城市的区块隐藏）
+    let seaBaseY = 0;           // 海平面基准（= 最低区块基座）
+    let seaLevel = 0;           // 当前场景海平面高度
     // 文件级缓存：打包模式下多个区块共享同一文件，只下载一次
     // 下载结果走浏览器 HTTP 缓存（Worker 返回 Cache-Control: max-age=3600 + ETag），
     // 二次访问直接命中缓存秒开；模型更新后 Ctrl+F5 强刷即可绕过
@@ -299,7 +320,7 @@
     // 连锁推进：本波全部开始上浮（或加载失败）后，下一波整波同一时刻排队
     function checkWaveAdvance(c) {
       const w = waves[c.waveIdx];
-      if (!w) return;
+      if (!w || w.indexOf(c) < 0) return;   // 跨场景在途回调：区块不属于当前波次结构，忽略
       const begun = x => x.state === 'rising' || x.state === 'done' || x.state === 'failed';
       if (!w.every(begun)) return;              // 本波还有区块没动，等它
       const next = waves[c.waveIdx + 1];
@@ -311,21 +332,22 @@
     }
     // 孤岛救助：无在途/排队区块且仍有待加载时，从已落定区块质心重启涟漪（多点起涟）
     function maybeReseed() {
-      for (const c of chunks) {
+      if (!active.length) return;
+      for (const c of active) {
         if (c.state === 'loading' || c.state === 'rising' || (c.state === 'pending' && c.scheduled)) return;
       }
       // 网络抖动导致的失败区块：重置重试（最多 3 次），避免永久缺口
-      const retry = chunks.filter(c => c.state === 'failed' && (c.retries || 0) < 3);
+      const retry = active.filter(c => c.state === 'failed' && (c.retries || 0) < 3);
       if (retry.length) {
         const c = retry[0];
         c.state = 'pending'; c.scheduled = true;
         c.schedAt = performance.now() / 1000;
         return;
       }
-      const pend = chunks.filter(c => c.state === 'pending' && c.waveIdx === undefined);
+      const pend = active.filter(c => c.state === 'pending' && c.waveIdx === undefined);
       if (!pend.length) return;
       let ax = 0, az = 0, n = 0;
-      for (const c of chunks) if (c.state !== 'pending') {
+      for (const c of active) if (c.state !== 'pending') {
         ax += (c.entry.x || 0) + (c.entry.sx || 0) / 2; az += (c.entry.z || 0) + (c.entry.sz || 0) / 2; n++;
       }
       if (!n) for (const c of pend) {
@@ -342,6 +364,62 @@
       best.scheduled = true;
       best.schedAt = performance.now() / 1000;
     }
+
+    /* ---------- 场景切换（城市）：重置涟漪动画 + 相机对准该城 + 应用该城海平面配置 ---------- */
+    function applyScene(idx) {
+      if (idx < 0 || idx >= SCENES.length) idx = 0;
+      sceneIdx = idx;
+      const def = SCENES[idx];
+      sceneName = def.name;
+      active = chunks.filter(c => c.entry.x !== undefined && c.entry.x >= def.x[0] && c.entry.x < def.x[1] && c.entry.z >= def.z[0] && c.entry.z < def.z[1]);
+      if (!active.length) { sceneIdx = 0; sceneName = SCENES[0].name; active = chunks.slice(); }
+      // 该场景海平面：配置了 level 用配置值，否则取最低区块基座
+      const curSea = (SCENES[sceneIdx] || SCENES[0]).sea;
+      seaLevel = (curSea.level != null) ? curSea.level : seaBaseY;
+      // 重置该场景区块（几何已在内存 → 免下载直接重播上浮动画）
+      for (const c of active) {
+        c.state = 'pending'; c.scheduled = false; c.waveIdx = undefined; c.retries = 0;
+      }
+      waves.length = 0;
+      // 种子 = 离场景质心最近的区块
+      let ax = 0, az = 0;
+      for (const c of active) { ax += (c.entry.x || 0) + (c.entry.sx || 0) / 2; az += (c.entry.z || 0) + (c.entry.sz || 0) / 2; }
+      ax /= active.length; az /= active.length;
+      let start = active[0], bd = Infinity;
+      for (const c of active) {
+        const d = Math.hypot((c.entry.x || 0) + (c.entry.sx || 0) / 2 - ax, (c.entry.z || 0) + (c.entry.sz || 0) / 2 - az);
+        if (d < bd) { bd = d; start = c; }
+      }
+      buildWaves(start, active);
+      start.scheduled = true; start.schedAt = performance.now() / 1000;
+      // 相机：球心移到该城质心所在海平面，重新推近入场
+      userAdjusted = false; lookYaw = 0; lookPitch = 0;
+      introT0 = performance.now() / 1000; introOn = true;
+      recomputeBounds();
+      const sn = document.getElementById('sceneName');
+      if (sn) sn.textContent = sceneName;
+      document.querySelectorAll('.city-item').forEach(b => b.classList.toggle('active', +b.dataset.scene === sceneIdx));
+    }
+    // 城市拉取栏：构建按钮（只显示当前 manifest 中有区块的城市）
+    function buildCityDrawer() {
+      const panel = document.getElementById('cityPanel');
+      if (!panel) return;
+      panel.querySelectorAll('.city-item').forEach(b => b.remove());
+      const mk = (label, idx) => {
+        const b = document.createElement('button');
+        b.className = 'city-item' + (idx === 0 ? ' active' : '');
+        b.dataset.scene = idx; b.textContent = label;
+        b.addEventListener('click', () => {
+          applyScene(idx);
+          document.getElementById('cityRail').classList.remove('open');
+        });
+        panel.appendChild(b);
+      };
+      SCENES.forEach((s, i) => {
+        const has = chunks.some(c => c.entry.x !== undefined && c.entry.x >= s.x[0] && c.entry.x < s.x[1] && c.entry.z >= s.z[0] && c.entry.z < s.z[1]);
+        if (has || i === 0) mk(s.name, i);
+      });
+    }
     function startLoad(c) {
       c.state = 'loading';
       const finish = (parsed) => {
@@ -356,6 +434,7 @@
             }
           } else if (!c.entry.sx) {  // 回退单模型：用解析结果补全尺寸/原点
             c.entry.x = parsed.min[0]; c.entry.y = parsed.min[1]; c.entry.z = parsed.min[2];
+            seaBaseY = parsed.min[1];   // 回退模式：海平面基准 = 模型底部
             c.entry.sx = parsed.max[0] - parsed.min[0]; c.entry.sy = parsed.max[1] - parsed.min[1]; c.entry.sz = parsed.max[2] - parsed.min[2];
             prims = [];
             for (const g of (parsed.meshes || [])) prims.push.apply(prims, g.prims);
@@ -365,7 +444,7 @@
           }
           c.prims = prims;
         }
-        c.bufs = prims.map(p => {
+        if (!c.bufs) c.bufs = prims.map(p => {   // 场景切换重播时复用 GPU 缓冲，避免重复上传
           const pb = gl.createBuffer(), nb = gl.createBuffer(), ib = gl.createBuffer();
           gl.bindBuffer(gl.ARRAY_BUFFER, pb); gl.bufferData(gl.ARRAY_BUFFER, p.pos, gl.STATIC_DRAW);
           gl.bindBuffer(gl.ARRAY_BUFFER, nb); gl.bufferData(gl.ARRAY_BUFFER, p.nor, gl.STATIC_DRAW);
@@ -373,11 +452,11 @@
           return { pb, nb, ib, count: p.idx.length, matIdx: p.matIdx };
         });
         c.origin = [c.entry.x, c.entry.y, c.entry.z];
-        c.drop = Math.max(16, c.entry.sy * 0.85);
+        // 上浮起点 = 海平面下完全没入（区块顶部低于海平面 + 26 格余量），从海里升起
+        c.drop = Math.max(16, (c.entry.y + c.entry.sy) - seaLevel + 26);
         c.state = 'rising';
         c.riseStart = performance.now() / 1000;
         anySuccess = true;
-        spawnFX(c);
         checkWaveAdvance(c);    // 本区块开始上浮 → 本波若已全部启动，连锁下一波
         recomputeBounds();
       };
@@ -393,93 +472,39 @@
         });
     }
 
-    /* ---------- 粒子特效：浅绿/浅粉 线条 + 斑点（只依附实体表面，不出现在空气处） ---------- */
-    const GREEN = [0.42, 0.98, 0.60], PINK = [1.0, 0.50, 0.92];
-    // 从区块几何顶点采样实体表面点（抽稀控制数量），粒子只在有实体的位置生成
-    function buildSurfacePoints(c) {
-      const pts = [];
-      const total = c.prims.reduce((a, p) => a + p.pos.length, 0);
-      if (!total) return pts;
-      const step = Math.max(3, Math.floor(total / 3 / 6000));   // 每区块最多约 6000 采样点
-      for (const p of c.prims) {
-        const pos = p.pos;
-        for (let i = 0; i < pos.length; i += step * 3) {
-          pts.push(pos[i], pos[i + 1], pos[i + 2]);
-        }
-      }
-      return pts;
-    }
-    function spawnFX(c) {
-      const surf = buildSurfacePoints(c);
-      // 粒子仅作点缀（表面覆盖由着色器完成）：数量压到很低
-      const n = Math.min(80, Math.max(24, Math.round((surf.length / 3 || 1) * 0.008)));
-      const ps = [];
-      for (let i = 0; i < n; i++) {
-        const si = ((Math.random() * surf.length / 3) | 0) * 3;
-        const sx = surf[si] || 0, sy = surf[si + 1] || 0, sz = surf[si + 2] || 0;
-        const isLine = Math.random() < 0.55;   // 更多独立斑点（更醒目，不被线条覆盖）
-        // 粉色多于绿色（都大胆）；粉色偏移更大让其浮到模型轮廓外深背景上可见
-        const col = Math.random() < 0.6 ? PINK : GREEN;
-        // 亮度：绿色可拉高；粉色提高 B 保持高亮纯粉（避免加色混合被白色模型稀释成不可见）
-        const b = col === PINK ? (1.0 + Math.random() * 0.4) : (1.0 + Math.random() * 0.55);
-        const spread = col === PINK ? 2.6 : 1.6;   // 粉色更多浮出轮廓
-        ps.push({
-          line: isLine,
-          bx: sx, by: sy, bz: sz,               // 实体表面基准点
-          x: sx + (Math.random() - 0.5) * spread,
-          z: sz + (Math.random() - 0.5) * spread,
-          y: sy + (Math.random() - 0.5) * 1.2,
-          speed: 1.2 + Math.random() * 4.5,     // 更快流动 = 科技感
-          len: 2.2 + Math.random() * 5,
-          col: [col[0] * b, col[1] * b, col[2] * b],
-          phase: Math.random() * Math.PI * 2,
-          flick: 3 + Math.random() * 6,
-          size: 6 + Math.random() * 9,
-        });
-      }
-      c.fx = ps;
-      // 随机生成线（取代固定十字线）：区块范围内随机位置/朝向的绿粉光线，上升时浮现
-      const sl = [];
-      const nL = 5 + (Math.random() * 4 | 0);   // 每区块 5~8 条
-      for (let i = 0; i < nL; i++) {
-        const x = c.origin[0] + Math.random() * (c.entry.sx || 16);
-        const z = c.origin[2] + Math.random() * (c.entry.sz || 16);
-        const y = c.origin[1] + (c.entry.sy || 16) * (0.2 + Math.random() * 0.72);
-        const len = 4 + Math.random() * 10;
-        const ang = Math.random() * Math.PI;                       // 水平面内随机朝向
-        const pitch = (Math.random() - 0.5) * 0.8;                 // 随机俯仰
-        sl.push({
-          x1: x, y1: y, z1: z,
-          x2: x + Math.cos(ang) * len,
-          y2: y + pitch * len,
-          z2: z + Math.sin(ang) * len,
-          col: Math.random() < 0.55 ? GREEN : PINK,
-          phase: Math.random() * Math.PI * 2,
-          flick: 2.5 + Math.random() * 5,
-        });
-      }
-      c.scanLines = sl;
-    }
-    function fxEnvelope(c, now) {
-      // 强度包络：0.1 内快速显现 → 全程保持 1（消退由着色器扫描线逐层完成）→ 落定归零
-      const dur = RISE_DUR * (window.__slow ? 4 : 1);
-      const t = c.state === 'done' ? 1 : Math.min(1, (now - c.riseStart) / dur);
-      if (t <= 0) return 0;
-      if (t >= 1) return 0;          // 落定：扫描线已到底，无残留
-      if (t < 0.1) return t / 0.1;   // 快速显现
-      return 1;
-    }
-
-    /* ---------- 相机 / 交互 ---------- */
-    let yaw = 0.75, pitch = 0.5, dist = 100;
-    let target = [0, 0, 0], radius = 30, yMin = 0, yMax = 10;
+    /* ---------- 相机 / 交互：固定仰角球面相机 ----------
+       以中心区块海平面为球心的虚拟球体，摄像机锁定球面 70° 仰角：
+       左键滑动 = 沿球面移动（方位角），右键滑动 = 转向（视线偏航/俯仰），滚轮 = 缩放（球半径） */
+    const CAM_ELEV = 70 * Math.PI / 180;   // 固定仰角 70°
+    let camYaw = 0.75, dist = 100;
+    let lookYaw = 0, lookPitch = 0;        // 右键转向的视线偏移
+    let camCenter = [0, 0, 0], sceneRadius = 30, yMin = 0, yMax = 10;
     let introT0 = performance.now() / 1000, introOn = true;
-    let lastInteract = -1e9, dragging = false, lastX = 0, lastY = 0, userAdjusted = false;
+    let lastInteract = -1e9, dragging = false, dragBtn = 0, lastX = 0, lastY = 0, userAdjusted = false;
+    let seaBuf = null;                     // 海平面网格
 
+    function rotX(a) { const c = Math.cos(a), s = Math.sin(a), m = new Float32Array(16); m[0] = 1; m[5] = c; m[6] = s; m[9] = -s; m[10] = c; m[15] = 1; return m; }
+    function rotY(a) { const c = Math.cos(a), s = Math.sin(a), m = new Float32Array(16); m[0] = c; m[2] = -s; m[5] = 1; m[8] = s; m[10] = c; m[15] = 1; return m; }
+
+    // 海平面：以场景中心为心的大水面（半透明浅蓝，uOffset 平移到海平面高度）
+    // 海面高出基座底 2 格（浸水观感）：落定后城市像坐在海里，且与区块底面(y=seaLevel)不共面无 z-fighting
+    const SEA_SURF = 2;
+    function buildSeaQuad() {
+      const S = Math.max(80, sceneRadius * 3.2);
+      if (!seaBuf) seaBuf = { pb: gl.createBuffer(), nb: gl.createBuffer(), ib: gl.createBuffer(), count: 6 };
+      gl.bindBuffer(gl.ARRAY_BUFFER, seaBuf.pb);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-S, 0, -S, S, 0, -S, S, 0, S, -S, 0, S]), gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, seaBuf.nb);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, seaBuf.ib);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array([0, 2, 1, 0, 3, 2]), gl.STATIC_DRAW);
+      seaBuf.off = [camCenter[0], seaLevel + SEA_SURF, camCenter[2]];
+      seaBuf.S = S;
+    }
     function recomputeBounds() {
       let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
       let any = false;
-      for (const c of chunks) {
+      for (const c of active) {
         if (!c.entry.sx) continue;
         any = true;
         const e = c.entry;
@@ -487,68 +512,83 @@
         mx[0] = Math.max(mx[0], e.x + e.sx); mx[1] = Math.max(mx[1], e.y + e.sy); mx[2] = Math.max(mx[2], e.z + e.sz);
       }
       if (!any) return;
-      target = [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2];
-      radius = Math.max(10, 0.5 * Math.hypot(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]));
+      sceneRadius = Math.max(10, Math.hypot(mx[0] - mn[0], mx[2] - mn[2]) / 2);   // 场景半径按水平范围
+      camCenter = [(mn[0] + mx[0]) / 2, seaLevel, (mn[2] + mx[2]) / 2];            // 球心 = 场景质心所在海平面
       yMin = mn[1]; yMax = mx[1];
-      if (!userAdjusted) dist = radius * 2.05;   // 用户未动过相机时随边界自适应
+      if (!userAdjusted) dist = sceneRadius * 3.0;   // 用户未动过相机时随场景自适应
+      buildSeaQuad();
     }
+    canvas.addEventListener('contextmenu', e => e.preventDefault());   // 右键拖拽转向，屏蔽菜单
     canvas.addEventListener('pointerdown', e => {
-      e.preventDefault(); dragging = true; lastX = e.clientX; lastY = e.clientY;
-      canvas.setPointerCapture(e.pointerId); introOn = false; userAdjusted = true;
+      e.preventDefault(); dragging = true; dragBtn = e.button; lastX = e.clientX; lastY = e.clientY;
+      canvas.setPointerCapture(e.pointerId); introOn = false; userAdjusted = true; lastInteract = performance.now();
+      const rail = document.getElementById('cityRail');
+      if (rail) rail.classList.remove('open');
     });
     canvas.addEventListener('pointermove', e => {
       if (!dragging) return;
-      yaw -= (e.clientX - lastX) * 0.008;
-      pitch = Math.max(-1.45, Math.min(1.45, pitch + (e.clientY - lastY) * 0.008));
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      if (dragBtn === 2) {   // 右键：转向（视线偏航 + 俯仰）
+        lookYaw -= dx * 0.004;
+        lookPitch = Math.max(-0.55, Math.min(0.5, lookPitch - dy * 0.003));
+      } else {               // 左键：沿球面移动（方位角，仰角固定 70°）
+        camYaw -= dx * 0.006;
+      }
       lastX = e.clientX; lastY = e.clientY; lastInteract = performance.now();
     });
     ['pointerup', 'pointercancel'].forEach(ev => canvas.addEventListener(ev, () => { dragging = false; lastInteract = performance.now(); }));
     canvas.addEventListener('wheel', e => {
       e.preventDefault();
-      dist = Math.max(radius * 0.4, Math.min(radius * 12, dist * Math.exp(e.deltaY * 0.001)));
+      dist = Math.max(sceneRadius * 0.4, Math.min(sceneRadius * 12, dist * Math.exp(e.deltaY * 0.001)));
       lastInteract = performance.now(); introOn = false; userAdjusted = true;
     }, { passive: false });
+    // 左侧城市拉取栏开合
+    const cityHandle = document.getElementById('cityHandle');
+    if (cityHandle) cityHandle.addEventListener('click', () => {
+      document.getElementById('cityRail').classList.toggle('open');
+    });
 
     /* ---------- 渲染循环 ---------- */
     gl.enable(gl.DEPTH_TEST);
-    gl.disable(gl.CULL_FACE);
+    gl.enable(gl.CULL_FACE);   // 背面剔除：模型内部不可见面全部隐藏
+    gl.cullFace(gl.BACK);
     gl.clearColor(0, 0, 0, 0);
-    const partBuf = gl.createBuffer();
-    let lastT = performance.now() / 1000;
     const progText = document.getElementById('progText');
 
     function draw() {
       const now = performance.now() / 1000;
-      const dt = Math.min(0.05, now - lastT); lastT = now;
       const dpr = window.devicePixelRatio || 1;
       const w = Math.max(1, canvas.clientWidth * dpr | 0), h = Math.max(1, canvas.clientHeight * dpr | 0);
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
       gl.viewport(0, 0, w, h);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-      // 调度到点的区块（+ 孤岛重启涟漪）
-      for (const c of chunks) if (c.state === 'pending' && c.scheduled && now >= c.schedAt) startLoad(c);
+      // 调度到点的区块（+ 孤岛重启涟漪）—— 仅当前场景
+      for (const c of active) if (c.state === 'pending' && c.scheduled && now >= c.schedAt) startLoad(c);
       maybeReseed();
 
-      // 相机：入场推近（可被交互打断）
-      let d = dist, p = pitch;
+      // 相机：固定仰角 70° 球面 + 入场推近（可被交互打断）
+      let d = dist;
       if (introOn) {
-        const t = Math.min(1, (now - introT0) / 3.0);
+        const t = Math.min(1, (now - introT0) / 2.6);
         const e = 1 - Math.pow(1 - t, 3);
-        d = dist * (1 + 1.15 * (1 - e));
-        p = 0.5 + 0.55 * (1 - e);
+        d = dist * (1 + 1.0 * (1 - e));
         if (t >= 1) introOn = false;
       }
-      if (!dragging && now - lastInteract > 4) yaw += 0.0022;
-      const eye = [target[0] + d * Math.cos(p) * Math.sin(yaw), target[1] + d * Math.sin(p), target[2] + d * Math.cos(p) * Math.cos(yaw)];
-      const proj = perspective(0.8, w / h, radius * 0.05, radius * 40);
-      const view = lookAt(eye, target, [0, 1, 0]);
+      if (!dragging && now - lastInteract > 4) camYaw += 0.0022;   // 闲置自动巡览
+      const horR = Math.cos(CAM_ELEV), verR = Math.sin(CAM_ELEV);
+      const eye = [camCenter[0] + d * horR * Math.sin(camYaw), camCenter[1] + d * verR, camCenter[2] + d * horR * Math.cos(camYaw)];
+      const proj = perspective(0.8, w / h, Math.max(1, sceneRadius * 0.05), sceneRadius * 40);
+      const baseView = lookAt(eye, camCenter, [0, 1, 0]);
+      // 右键转向：视线在相机空间做偏航/俯仰偏转
+      const view = (lookYaw || lookPitch) ? mul(rotX(lookPitch), mul(rotY(lookYaw), baseView)) : baseView;
 
       // ---- 区块网格：不透明 → 透明 ----
       gl.useProgram(meshProg);
+      gl.uniform1f(mLoc.uSeaFade, 0);   // 区块不启用海面径向淡出
       gl.uniformMatrix4fv(mLoc.uMVP, false, mul(proj, view));
       gl.uniform1f(mLoc.uYMin, yMin); gl.uniform1f(mLoc.uYMax, yMax);
-      const ready = chunks.filter(c => c.state === 'rising' || c.state === 'done');
+      const ready = active.filter(c => c.state === 'rising' || c.state === 'done');
       // 区块当前上升偏移：easeOutCubic 无回弹，模型上浮不会超过稳定高度
       function chunkRise(c) {
         const dur = RISE_DUR * (window.__slow ? 4 : 1);
@@ -563,11 +603,9 @@
         const alpha = Math.min(1, t * 2.2);
         const off = [c.origin[0], c.origin[1] + riseY, c.origin[2]];
         gl.uniform3f(mLoc.uOffset, off[0], off[1], off[2]);
-        // 表面绿粉科技纹样：强度=fxEnvelope，相位=上升进度（驱动扫描带下移）
-        gl.uniform1f(mLoc.uFx, fxEnvelope(c, now));
-        gl.uniform1f(mLoc.uFxPhase, t);
+        gl.uniform1f(mLoc.uSeaLevel, seaLevel + SEA_SURF);   // 水下渐隐：低于海面的部分染成海水色（与海面同高）
         for (const b of c.bufs) {
-          if (matFilter === 'opaque' ? b.matIdx !== 0 : b.matIdx === 0) continue;
+          if (matFilter === 'opaque' ? b.matIdx === 1 : b.matIdx !== 1) continue;   // 不透明=实心+水(浅蓝方块)，透明=仅玻璃
           const st = MAT_STYLE[b.matIdx] || MAT_STYLE[0];
           gl.uniform3f(mLoc.uColor, st.color[0], st.color[1], st.color[2]);
           gl.uniform1f(mLoc.uAlpha, st.alpha * alpha);
@@ -583,65 +621,34 @@
       }
       gl.disable(gl.BLEND); gl.depthMask(true);
       for (const c of ready) drawChunk(c, 'opaque');
+      // ---- 海平面：城市基座下的浅蓝水面（每城独立配置色/透明度，边缘径向淡出） ----
+      if (seaBuf) {
+        const curSea = (SCENES[sceneIdx] || SCENES[0]).sea;
+        gl.uniform3f(mLoc.uOffset, seaBuf.off[0], seaBuf.off[1], seaBuf.off[2]);
+        gl.uniform3f(mLoc.uColor, curSea.color[0], curSea.color[1], curSea.color[2]);
+        gl.uniform1f(mLoc.uAlpha, curSea.alpha);
+        gl.uniform1f(mLoc.uGrad, 0);
+        gl.uniform1f(mLoc.uSeaLevel, -10000);   // 海面自身不做水下渐隐
+        gl.uniform1f(mLoc.uSeaFade, seaBuf.S || 0);
+        gl.uniform1f(mLoc.uSeaCx, camCenter[0]); gl.uniform1f(mLoc.uSeaCz, camCenter[2]);
+        gl.disable(gl.CULL_FACE);
+        gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+        gl.bindBuffer(gl.ARRAY_BUFFER, seaBuf.pb);
+        gl.enableVertexAttribArray(mLoc.aPos); gl.vertexAttribPointer(mLoc.aPos, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, seaBuf.nb);
+        gl.enableVertexAttribArray(mLoc.aNor); gl.vertexAttribPointer(mLoc.aNor, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, seaBuf.ib);
+        gl.drawElements(gl.TRIANGLES, seaBuf.count, gl.UNSIGNED_INT, 0);
+        gl.enable(gl.CULL_FACE);
+        gl.uniform1f(mLoc.uSeaFade, 0);   // 恢复：后续玻璃 pass 不淡出
+      }
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
       for (const c of ready) drawChunk(c, 'trans');
-
-      // ---- 粒子（加色混合）：依附模型——跟随模型上浮 + 深度遮挡（只在模型表面发光） ----
-      const lineVerts = [], dotVerts = [];
-      for (const c of ready) {
-        if (!c.fx || !c.fx.length) continue;
-        const env = fxEnvelope(c, now);
-        if (env <= 0) { c.fx = null; continue; }
-        const riseY = chunkRise(c);   // 与模型同步的上升偏移
-        // 随机生成线：区块上升时表面浮现随机方向/位置的绿粉光线（随模型上浮，逐条闪烁）
-        if (c.state === 'rising' && c.scanLines) {
-          for (const L of c.scanLines) {
-            const a = env * 0.9 * (0.55 + 0.45 * Math.abs(Math.sin(now * L.flick + L.phase)));
-            lineVerts.push(L.x1, L.y1 + riseY, L.z1, L.col[0], L.col[1], L.col[2], a, 0,
-              L.x2, L.y2 + riseY, L.z2, L.col[0] * 0.3, L.col[1] * 0.3, L.col[2] * 0.3, a * 0.35, 0);
-          }
-        }
-        for (const pt of c.fx) {
-          pt.y += pt.speed * dt;
-          if (pt.y > pt.by + 5) pt.y = pt.by - 5;   // 在实体表面附近小幅循环，不飘向空气
-          const flick = 0.6 + 0.6 * Math.abs(Math.sin(now * pt.flick + pt.phase));
-          const a = env * flick * 0.6;   // 低密度点缀：单个粒子更淡，不抢戏
-          const py = pt.y + riseY;   // 粒子世界 Y = 局部 Y + 模型上升偏移
-          if (pt.line) {
-            lineVerts.push(pt.x, py, pt.z, pt.col[0], pt.col[1], pt.col[2], a, 0,
-              pt.x, py - pt.len, pt.z, pt.col[0] * 0.3, pt.col[1] * 0.3, pt.col[2] * 0.3, a * 0.35, 0);
-          } else {
-            dotVerts.push(pt.x, py, pt.z, pt.col[0], pt.col[1], pt.col[2], a, pt.size * dpr);
-          }
-        }
-      }
-      if (lineVerts.length || dotVerts.length) {
-        gl.useProgram(partProg);
-        gl.uniformMatrix4fv(pLoc.uMVP, false, mul(proj, view));
-        const stride = 8 * 4;
-        const bindAndDraw = (arr, mode) => {
-          if (!arr.length) return;
-          gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
-          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.DYNAMIC_DRAW);
-          gl.enableVertexAttribArray(pLoc.aPos); gl.vertexAttribPointer(pLoc.aPos, 3, gl.FLOAT, false, stride, 0);
-          gl.enableVertexAttribArray(pLoc.aCol); gl.vertexAttribPointer(pLoc.aCol, 4, gl.FLOAT, false, stride, 12);
-          gl.enableVertexAttribArray(pLoc.aSize); gl.vertexAttribPointer(pLoc.aSize, 1, gl.FLOAT, false, stride, 28);
-          gl.drawArrays(mode, 0, arr.length / 8);
-        };
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);   // 半透明覆盖：粒子光膜铺满模型表面（加色在白色上不可见）
-        gl.depthMask(false);
-        gl.depthFunc(gl.LEQUAL);            // 允许与模型表面共面的粒子通过 → 覆盖模型表面
-        gl.enable(gl.DEPTH_TEST);           // 模型内部的粒子仍被遮挡
-        bindAndDraw(lineVerts, gl.LINES);
-        bindAndDraw(dotVerts, gl.POINTS);
-        gl.depthFunc(gl.LESS);
-      }
       gl.depthMask(true); gl.disable(gl.BLEND);
 
-      // 进度文本
-      const doneN = chunks.filter(c => c.state === 'done').length;
-      const total = chunks.length;
-      progText.textContent = total ? `区块 ${doneN}/${total}` : '';
+      // 进度文本（当前场景）
+      const doneN = active.filter(c => c.state === 'done').length;
+      progText.textContent = active.length ? `区块 ${doneN}/${active.length}` : '';
       requestAnimationFrame(draw);
     }
 
@@ -678,22 +685,12 @@
         chunks.push({ entry: e, state: 'pending', scheduled: false });
       }
 
-      // 起点：最接近全体质心的区块
-      let cx = 0, cz = 0, n = 0;
-      for (const c of chunks) if (c.entry.x !== undefined) { cx += c.entry.x + (c.entry.sx || 0) / 2; cz += c.entry.z + (c.entry.sz || 0) / 2; n++; }
-      let start = chunks[0];
-      if (n > 1) {
-        cx /= n; cz /= n;
-        let best = Infinity;
-        for (const c of chunks) {
-          const d = Math.hypot(c.entry.x + (c.entry.sx || 0) / 2 - cx, c.entry.z + (c.entry.sz || 0) / 2 - cz);
-          if (d < best) { best = d; start = c; }
-        }
-      }
-      buildWaves(start, chunks);   // 波次划分：种子=第 0 波，四邻=第 1 波，逐波外扩
-      start.scheduled = true; start.schedAt = 0;
-      recomputeBounds();
-      dist = radius * 2.05;
+      // 海平面基准 = 最低区块基座（回退单模型时在加载完成处取模型底部）
+      let minY = Infinity;
+      for (const c of chunks) if (c.entry.y !== undefined) minY = Math.min(minY, c.entry.y);
+      if (isFinite(minY)) seaBaseY = minY;
+      buildCityDrawer();     // 左侧拉取栏：全图 + 有区块的城市
+      applyScene(0);         // 默认全图：波次划分 + 种子启动 + 相机入场
       requestAnimationFrame(draw);
       // 调试钩子（隔离世界可见的 DOM 数据）
       setInterval(() => {
